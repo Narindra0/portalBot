@@ -30,10 +30,13 @@ Comme GitHub Actions réinitialise les fichiers à chaque run, ton fichier `tele
 - Le scraper tourne automatiquement **toutes les 2 heures**.
 - Tu peux le lancer manuellement dans l'onglet **Actions** → **PortalJob Scraper** → **Run workflow**.
 
-### Le Bot (Local ou VPS)
-Le bot (qui gère les boutons et les CV) doit rester "allumé" en permanence. 
-- Tu peux continuer à le lancer sur ton PC via `python -m src.main bot`.
-- Il partagera la même base de données que le scraper grâce à Turso !
+### Le Bot (GitHub Actions - Optionnel)
+Si tu n'as pas de serveur (VPS) et que tu veux lancer le bot temporairement :
+1. Va dans l'onglet **Actions** → **PortalJob Telegram Bot**.
+2. Clique sur **Run workflow**.
+3. **Attention** : GitHub coupera le bot après **6 heures**. C'est utile pour des tests ou une utilisation ponctuelle, mais pas pour du 24h/24.
+
+---
 
 ## 🛠️ Commandes Locales Utiles
 

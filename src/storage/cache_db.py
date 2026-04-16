@@ -29,17 +29,59 @@ MAX_AGE_HOURS = 24
 # Verrou pour éviter les accès concurrents sur SQLite local en async
 _db_lock = asyncio.Lock()
 
+class AsyncTursoConn:
+    """Wrapper pour rendre la connexion Turso (libsql) compatible avec async/await."""
+    def __init__(self, conn):
+        self.conn = conn
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        await asyncio.to_thread(self.conn.close)
+
+    async def execute(self, sql, parameters=()):
+        # Exécute la requête dans un thread pour ne pas bloquer l'event loop
+        return await asyncio.to_thread(self._execute_sync, sql, parameters)
+
+    def _execute_sync(self, sql, parameters):
+        # Cette méthode tourne dans un thread
+        cursor = self.conn.execute(sql, parameters)
+        # On injecte des méthodes async sur le curseur pour la compatibilité
+        return AsyncCursorWrapper(cursor)
+
+    async def commit(self):
+        await asyncio.to_thread(self.conn.commit)
+
+class AsyncCursorWrapper:
+    """Wrapper pour les résultats du curseur."""
+    def __init__(self, cursor):
+        self.cursor = cursor
+    
+    async def fetchone(self):
+        return await asyncio.to_thread(self.cursor.fetchone)
+    
+    async def fetchall(self):
+        return await asyncio.to_thread(self.cursor.fetchall)
+    
+    async def __aenter__(self):
+        return self
+        
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        pass # Le curseur libsql se ferme généralement avec la connexion ou auto
+
 def get_async_conn():
     """
     Retourne une connexion asynchrone.
-    Bascule sur Turso si configuré, sinon utilise SQLite local.
+    Bascule sur Turso si configuré (via un wrapper async), sinon utilise aiosqlite local.
     """
     if USE_TURSO:
-        logger.info(f"🌐 Connexion à Turso (Cloud): {TURSO_DATABASE_URL[:20]}...")
-        # libsql-experimental supporte l'async
-        return libsql.connect(TURSO_DATABASE_URL, auth_token=TURSO_AUTH_TOKEN)
+        # logger.info(f"🌐 Connexion à Turso (Cloud): {TURSO_DATABASE_URL[:20]}...")
+        # libsql.connect est synchrone, on le wrap pour l'asynchrone
+        conn = libsql.connect(TURSO_DATABASE_URL, auth_token=TURSO_AUTH_TOKEN)
+        return AsyncTursoConn(conn)
     else:
-        # aiosqlite pour le local
+        # aiosqlite est déjà asynchrone
         return aiosqlite.connect(DB_FILE)
 
 async def init_db_async():
