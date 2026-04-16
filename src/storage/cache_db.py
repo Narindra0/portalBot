@@ -1,16 +1,51 @@
+"""
+Gestionnaire de cache avec support Turso (SQLite cloud) + fallback SQLite local.
+Turso est utilisé en priorité si les variables d'environnement sont présentes.
+"""
 import sqlite3
 import json
 import time
 import os
 from datetime import datetime, timedelta
 
-# Chemin de la base de données dans le dossier racine du projet
+# Configuration Turso (cloud)
+TURSO_DATABASE_URL = os.getenv('TURSO_DATABASE_URL')
+TURSO_AUTH_TOKEN = os.getenv('TURSO_AUTH_TOKEN')
+USE_TURSO = TURSO_DATABASE_URL and TURSO_AUTH_TOKEN
+
+# Fallback SQLite local
 DB_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "telegram_cache.db")
 MAX_AGE_HOURS = 24
 
+# Client Turso (initialisé à la première utilisation)
+_turso_conn = None
+
+def _get_turso_conn():
+    """Retourne la connexion Turso (crée si nécessaire)."""
+    global _turso_conn
+    if _turso_conn is None:
+        try:
+            import libsql_experimental as libsql
+            _turso_conn = libsql.connect(
+                database=TURSO_DATABASE_URL.replace('libsql://', 'https://'),
+                auth_token=TURSO_AUTH_TOKEN
+            )
+            print("☁️  Connecté à Turso (SQLite cloud)")
+        except Exception as e:
+            print(f"⚠️ Erreur connexion Turso: {e}")
+            raise
+    return _turso_conn
+
+
+def _get_conn():
+    """Retourne la connexion appropriée (Turso ou SQLite local)."""
+    if USE_TURSO:
+        return _get_turso_conn()
+    else:
+        return sqlite3.connect(DB_FILE)
 
 def init_db():
-    conn = sqlite3.connect(DB_FILE)
+    conn = _get_conn()
     cursor = conn.cursor()
 
     cursor.execute('''
@@ -27,7 +62,8 @@ def init_db():
     ''')
 
     conn.commit()
-    conn.close()
+    if not USE_TURSO:
+        conn.close()
 
 
 def ajouter_offre(offre_data):
@@ -36,7 +72,7 @@ def ajouter_offre(offre_data):
     url = offre_data.get('url', '')
     cache_key = f"offre_{hash(url) & 0x7FFFFFFF}"
 
-    conn = sqlite3.connect(DB_FILE)
+    conn = _get_conn()
     cursor = conn.cursor()
 
     cursor.execute('''
@@ -55,7 +91,8 @@ def ajouter_offre(offre_data):
     ))
 
     conn.commit()
-    conn.close()
+    if not USE_TURSO:
+        conn.close()
 
     # Nettoyer les vieilles entrées
     nettoyer_vieilles_offres()
@@ -65,10 +102,10 @@ def ajouter_offre(offre_data):
 
 def recuperer_offre(cache_key):
     """Récupère une offre par sa clé."""
-    if not os.path.exists(DB_FILE):
+    if not USE_TURSO and not os.path.exists(DB_FILE):
         return None
 
-    conn = sqlite3.connect(DB_FILE)
+    conn = _get_conn()
     cursor = conn.cursor()
 
     cursor.execute('''
@@ -77,7 +114,8 @@ def recuperer_offre(cache_key):
     ''', (cache_key,))
 
     row = cursor.fetchone()
-    conn.close()
+    if not USE_TURSO:
+        conn.close()
 
     if row is None:
         return None
@@ -100,12 +138,12 @@ def recuperer_offre(cache_key):
 
 def nettoyer_vieilles_offres():
     """Supprime les offres trop vieilles."""
-    if not os.path.exists(DB_FILE):
+    if not USE_TURSO and not os.path.exists(DB_FILE):
         return
 
     cutoff_time = time.time() - (MAX_AGE_HOURS * 3600)
 
-    conn = sqlite3.connect(DB_FILE)
+    conn = _get_conn()
     cursor = conn.cursor()
 
     cursor.execute('DELETE FROM offres WHERE timestamp < ?', (cutoff_time,))
@@ -121,12 +159,20 @@ def nettoyer_vieilles_offres():
     ''')
 
     conn.commit()
-    conn.close()
+    if not USE_TURSO:
+        conn.close()
 
 
 def vider_cache():
     """Vide complètement la base."""
-    if os.path.exists(DB_FILE):
+    if USE_TURSO:
+        conn = _get_conn()
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM offres')
+        cursor.execute('DELETE FROM offres_permanentes')
+        cursor.execute('DELETE FROM cv_utilisateur')
+        conn.commit()
+    elif os.path.exists(DB_FILE):
         os.remove(DB_FILE)
 
 
@@ -134,7 +180,7 @@ def vider_cache():
 
 def init_cv_table():
     """Initialise la table pour le CV utilisateur."""
-    conn = sqlite3.connect(DB_FILE)
+    conn = _get_conn()
     cursor = conn.cursor()
 
     cursor.execute('''
@@ -149,14 +195,15 @@ def init_cv_table():
     ''')
 
     conn.commit()
-    conn.close()
+    if not USE_TURSO:
+        conn.close()
 
 
 def sauvegarder_cv(nom, email, telephone, cv_text):
     """Sauvegarde ou met à jour le CV utilisateur."""
     init_cv_table()
 
-    conn = sqlite3.connect(DB_FILE)
+    conn = _get_conn()
     cursor = conn.cursor()
 
     date_now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -168,18 +215,19 @@ def sauvegarder_cv(nom, email, telephone, cv_text):
     ''', (nom, email, telephone, cv_text, date_now))
 
     conn.commit()
-    conn.close()
+    if not USE_TURSO:
+        conn.close()
     print(f"✅ CV sauvegardé pour {nom}")
 
 
 def recuperer_cv():
     """Récupère le CV utilisateur."""
-    if not os.path.exists(DB_FILE):
+    if not USE_TURSO and not os.path.exists(DB_FILE):
         return None
 
     init_cv_table()
 
-    conn = sqlite3.connect(DB_FILE)
+    conn = _get_conn()
     cursor = conn.cursor()
 
     cursor.execute('''
@@ -188,7 +236,8 @@ def recuperer_cv():
     ''')
 
     row = cursor.fetchone()
-    conn.close()
+    if not USE_TURSO:
+        conn.close()
 
     if row is None:
         return None
@@ -211,7 +260,7 @@ def cv_existe():
 
 def init_offres_permanentes_table():
     """Initialise la table pour le stockage permanent des offres."""
-    conn = sqlite3.connect(DB_FILE)
+    conn = _get_conn()
     cursor = conn.cursor()
 
     cursor.execute('''
@@ -233,17 +282,17 @@ def init_offres_permanentes_table():
     ''')
 
     conn.commit()
-    conn.close()
+    if not USE_TURSO:
+        conn.close()
 
 
 def sauvegarder_offre_permanente(offre_data):
     """
-    Sauvegarde une offre de manière permanente dans SQLite.
-    Remplace le stockage JSON.
+    Sauvegarde une offre de manière permanente dans SQLite/Turso.
     """
     init_offres_permanentes_table()
 
-    conn = sqlite3.connect(DB_FILE)
+    conn = _get_conn()
     cursor = conn.cursor()
 
     try:
@@ -266,20 +315,21 @@ def sauvegarder_offre_permanente(offre_data):
         print(f"⚠️ Erreur sauvegarde offre: {e}")
         return False
     finally:
-        conn.close()
+        if not USE_TURSO:
+            conn.close()
 
 
 def charger_toutes_offres():
     """
-    Charge toutes les offres depuis SQLite.
-    Retourne un dictionnaire {url: offre_data} pour compatibilité avec l'ancien code JSON.
+    Charge toutes les offres depuis SQLite/Turso.
+    Retourne un dictionnaire {url: offre_data} pour compatibilité.
     """
     init_offres_permanentes_table()
 
-    if not os.path.exists(DB_FILE):
+    if not USE_TURSO and not os.path.exists(DB_FILE):
         return {}
 
-    conn = sqlite3.connect(DB_FILE)
+    conn = _get_conn()
     cursor = conn.cursor()
 
     try:
@@ -310,20 +360,22 @@ def charger_toutes_offres():
         print(f"⚠️ Erreur chargement offres: {e}")
         return {}
     finally:
-        conn.close()
+        if not USE_TURSO:
+            conn.close()
 
 
 def offre_existe(url):
     """Vérifie si une offre existe déjà dans la base permanente."""
     init_offres_permanentes_table()
 
-    conn = sqlite3.connect(DB_FILE)
+    conn = _get_conn()
     cursor = conn.cursor()
 
     cursor.execute('SELECT 1 FROM offres_permanentes WHERE url = ?', (url,))
     result = cursor.fetchone()
 
-    conn.close()
+    if not USE_TURSO:
+        conn.close()
 
     return result is not None
 
@@ -332,13 +384,14 @@ def compter_offres():
     """Retourne le nombre total d'offres enregistrées."""
     init_offres_permanentes_table()
 
-    conn = sqlite3.connect(DB_FILE)
+    conn = _get_conn()
     cursor = conn.cursor()
 
     cursor.execute('SELECT COUNT(*) FROM offres_permanentes')
     count = cursor.fetchone()[0]
 
-    conn.close()
+    if not USE_TURSO:
+        conn.close()
 
     return count
 

@@ -34,26 +34,14 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
         playwright install chromium
-        
-    - name: Restore SQLite database
-      uses: actions/cache@v3
-      with:
-        path: telegram_cache.db
-        key: ${{ runner.os }}-db-${{ github.sha }}
-        restore-keys: |
-          ${{ runner.os }}-db-
     
     - name: Exécution du scraper
       env:
         TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         HF_API_KEY: ${{ secrets.HF_API_KEY }}
+        TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+        TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
         HEADLESS: "true"
       run: |
         python -c "from src.scraper import surveiller_portal; surveiller_portal()"
-        
-    - name: Save SQLite database
-      uses: actions/cache@v3
-      with:
-        path: telegram_cache.db
-        key: ${{ runner.os }}-db-${{ github.sha }}-${{ github.run_id }}

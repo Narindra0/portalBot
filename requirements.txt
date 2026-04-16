@@ -19,3 +19,6 @@ huggingface-hub>=0.20.0
 
 # Configuration
 python-dotenv>=1.0.0
+
+# Turso (SQLite cloud) - optionnel, fallback sur SQLite local
+libsql-experimental>=0.0.41

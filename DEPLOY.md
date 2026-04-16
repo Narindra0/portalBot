@@ -23,11 +23,15 @@ Ou utilise GitHub Desktop / l'interface web.
 
 Dans ton repo GitHub → Settings → Secrets and variables → Actions:
 
-| Secret | Valeur |
-|--------|--------|
-| `TELEGRAM_TOKEN` | Ton token Telegram |
-| `TELEGRAM_CHAT_ID` | Ton chat ID |
-| `HF_API_KEY` | Ta clé Hugging Face |
+| Secret | Valeur | Requis |
+|--------|--------|--------|
+| `TELEGRAM_TOKEN` | Ton token Telegram | ✅ Oui |
+| `TELEGRAM_CHAT_ID` | Ton chat ID | ✅ Oui |
+| `HF_API_KEY` | Ta clé Hugging Face | ✅ Oui |
+| `TURSO_DATABASE_URL` | `libsql://...turso.io` | ❌ Optionnel |
+| `TURSO_AUTH_TOKEN` | Token d'accès Turso | ❌ Optionnel |
+
+**Note sur Turso** : Sans `TURSO_DATABASE_URL`, le scraper utilise SQLite local. Les données disparaissent entre les exécutions sur GitHub Actions. Avec Turso, les données persistent dans le cloud.
 
 ### 3. C'est tout ! 🎉
 

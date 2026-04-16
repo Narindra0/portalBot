@@ -191,10 +191,12 @@ Le scraper peut tourner gratuitement 24/7 sans ton PC !
 ### Option recommandée : GitHub Actions (100% gratuit)
 
 1. Upload le code sur GitHub
-2. Configure 3 secrets dans Settings → Secrets:
+2. Configure 5 secrets dans Settings → Secrets:
    - `TELEGRAM_TOKEN`
    - `TELEGRAM_CHAT_ID`
    - `HF_API_KEY`
+   - `TURSO_DATABASE_URL` (optionnel, voir [Turso](#-base-de-données-turso))
+   - `TURSO_AUTH_TOKEN` (optionnel)
 3. Le scraper tourne automatiquement toutes les 2 heures
 
 Les workflows sont déjà configurés dans `.github/workflows/`.
@@ -209,9 +211,31 @@ Les workflows sont déjà configurés dans `.github/workflows/`.
 
 ## �📝 Notes
 
-- **Stockage**: Toutes les offres sont dans `telegram_cache.db` (SQLite) - plus fiable que JSON
+- **Stockage**: SQLite local par défaut, ou **Turso** (SQLite cloud) si configuré
 - Le scraper vérifie toutes les 30 minutes (mode continu)
 - Le cache temporaire pour Telegram expire après 24h (20 offres max)
+
+## 🗄️ Base de données (Turso - Optionnel)
+
+Pour une base persistante sur GitHub Actions, configure **Turso** (SQLite serverless gratuit) :
+
+```bash
+# 1. Installer Turso CLI
+curl -sSfL https://get.tur.so/install.sh | bash
+
+# 2. Créer une base
+turso db create portaljob-scraper
+turso db show portaljob-scraper  # Copie l'URL
+
+# 3. Créer un token
+turso db tokens create portaljob-scraper  # Copie le token
+```
+
+Ajoute les variables dans GitHub Secrets :
+- `TURSO_DATABASE_URL` → `libsql://portaljob-USERNAME.turso.io`
+- `TURSO_AUTH_TOKEN` → `eyJhbGciOiJF...`
+
+**Sans Turso** : utilise SQLite local (fonctionne aussi sur GitHub Actions mais les données disparaissent entre les runs).
 - Les offres non-développement sont filtrées automatiquement
 - Pour exporter en JSON: utilise la fonction `exporter_vers_json()` du module storage
 
