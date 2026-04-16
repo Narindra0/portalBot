@@ -62,23 +62,51 @@ def extraire_offres_du_dom(page):
     offres = []
 
     try:
+        # DEBUG: Voir le titre de la page et nombre d'articles
+        titre_page = page.title()
+        print(f"   Page title: {titre_page}")
+
         # Chercher tous les articles (éléments contenant les offres)
         articles = page.locator('article').all()
+        print(f"   {len(articles)} éléments <article> trouvés")
 
-        for article in articles:
+        # Si aucun article, essayer d'autres sélecteurs communs
+        if len(articles) == 0:
+            # Essayer les sélecteurs alternatifs
+            divs_offres = page.locator('div[class*="job"], div[class*="offre"], div[class*="listing"]').all()
+            print(f"   {len(divs_offres)} divs avec class job/offre/listing trouvés")
+
+            # DEBUG: Sauvegarder un extrait du HTML pour inspection
+            html_content = page.content()
+            print(f"   HTML length: {len(html_content)} caractères")
+            # Chercher un pattern dans le HTML
+            if 'h3' in html_content:
+                print(f"   ✅ Des balises <h3> sont présentes (probablement des titres d'offres)")
+
+        # Si pas d'articles, essayer avec des divs alternatifs
+        if len(articles) == 0:
+            articles = page.locator('div').all()
+            print(f"   Fallback: {len(articles)} divs à scanner")
+
+        for idx, article in enumerate(articles[:50]):  # Limiter à 50 pour perf
             try:
                 # Chercher le lien principal de l'offre (titre)
-                lien_titre = article.locator('a h3').first
+                # Essayer d'abord a h3, sinon juste h3
+                lien_titre = article.locator('a h3, h3').first
                 if not lien_titre or lien_titre.count() == 0:
                     continue
 
-                # Récupérer le parent <a> du h3
+                # Récupérer le parent <a> du h3 ou chercher un <a> proche
                 lien_principal = article.locator('a').first
                 if not lien_principal or lien_principal.count() == 0:
+                    # Essayer de trouver un lien dans le parent
                     continue
 
                 href = lien_principal.get_attribute('href')
-                if not href or 'view' not in href:
+                if not href:
+                    continue
+                # Accepter les liens vers /emploi/view/ ou /offre/
+                if 'view' not in href and 'offre' not in href and 'job' not in href:
                     continue
 
                 # Titre de l'offre
@@ -110,13 +138,17 @@ def extraire_offres_du_dom(page):
                     'url': url_offre,
                     'date': date_pub
                 })
+                print(f"   ✅ Offre trouvée: {titre[:50]}...")
 
             except Exception as e:
                 continue
 
     except Exception as e:
         print(f"Erreur extraction DOM: {e}")
+        import traceback
+        traceback.print_exc()
 
+    print(f"   Total: {len(offres)} offres extraites avec succès")
     return offres
 
 
