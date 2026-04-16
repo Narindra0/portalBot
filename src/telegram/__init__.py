@@ -1,12 +1,11 @@
 # Module Telegram
-from .bot import envoyer_offre, tester_configuration, envoyer_message_simple, formater_card_compacte, formater_details_complets
-from .callback_handler import poll_callbacks
+from .bot import envoyer_offre_async, formater_card_compacte, formater_details_complets
+from .callback_handler import setup_application, run_bot
 
 __all__ = [
-    'envoyer_offre',
-    'tester_configuration',
-    'envoyer_message_simple',
+    'envoyer_offre_async',
     'formater_card_compacte',
     'formater_details_complets',
-    'poll_callbacks',
+    'setup_application',
+    'run_bot',
 ]

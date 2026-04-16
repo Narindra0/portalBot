@@ -1,212 +1,110 @@
 """
 Module de bot Telegram pour envoi des offres PortalJob.
+Refactorisé pour utiliser python-telegram-bot (async) et HTML.
 """
-import os
-import requests
-from dotenv import load_dotenv
+import html
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.constants import ParseMode
+from ..config import TELEGRAM_TOKEN, TELEGRAM_CHAT_ID
+from ..storage.cache_db import ajouter_offre_async
+from ..utils.logger import logger
 
-# Charger les variables d'environnement
-load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'config', '.env'))
-
-TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
-TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
-TELEGRAM_API_URL = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}"
-
-# Import du gestionnaire de cache SQLite
-from ..storage import ajouter_offre as sauvegarder_offre_cache
-
+def escape_html(text):
+    """Échappe les caractères HTML spéciaux."""
+    if not text: return ""
+    return html.escape(str(text))
 
 def formater_card_compacte(offre_data):
-    """
-    Formate une offre en card compacte (aperçu rapide).
-    """
-    titre = offre_data.get('titre', 'Sans titre')
-    entreprise = offre_data.get('entreprise', 'Non spécifiée')
-    date_pub = offre_data.get('date_publication', 'Date inconnue')
-
-    # Extraire un résumé des missions (3 premières lignes)
+    """Formate une offre en HTML compact."""
+    titre = escape_html(offre_data.get('titre', 'Sans titre'))
+    entreprise = escape_html(offre_data.get('entreprise', 'Non spécifiée'))
+    date_pub = escape_html(offre_data.get('date_publication', 'Date inconnue'))
+    
+    # Résumé missions (2 premières lignes)
     details = offre_data.get('details', '')
     resume_missions = ""
+    if "Missions:" in details:
+        missions_part = details.split("Missions:")[1].split("**")[0] if "**" in details.split("Missions:")[1] else details.split("Missions:")[1]
+        lines = [l.strip() for l in missions_part.split('\n') if l.strip()][:2]
+        if lines:
+            resume_missions = "\n" + "\n".join([f"▫️ {escape_html(l[:80])}" for l in lines])
 
-    if "**Missions:**" in details:
-        missions_part = details.split("**Missions:**")[1].split("**")[0] if "**" in details.split("**Missions:**")[1] else details.split("**Missions:**")[1]
-        missions_lines = [line.strip() for line in missions_part.split('\n') if line.strip() and not line.startswith('**')][:2]
-        if missions_lines:
-            resume_missions = "\n".join([f"▫️ {line[:80]}" for line in missions_lines])
-
-    message = f"""💼 *{titre}*
-
-🏢 {entreprise}  •  📅 {date_pub}"""
-
-    if resume_missions:
-        message += f"\n\n{resume_missions}"
-
-    return message
-
+    return f"💼 <b>{titre}</b>\n\n🏢 {entreprise}  •  📅 {date_pub}{resume_missions}"
 
 def formater_details_complets(offre_data):
-    """
-    Formate les détails complets de l'offre.
-    """
-    titre = offre_data.get('titre', 'Sans titre')
-    entreprise = offre_data.get('entreprise', 'Non spécifiée')
-    date_pub = offre_data.get('date_publication', 'Date inconnue')
+    """Formate les détails complets en HTML."""
+    titre = escape_html(offre_data.get('titre', 'Sans titre'))
+    entreprise = escape_html(offre_data.get('entreprise', 'Non spécifiée'))
+    url = offre_data.get('url', '')
     details = offre_data.get('details', '')
 
-    # Construire le message complet
-    sections = []
+    msg = f"📌 <b>{titre}</b>\n🏢 {entreprise}\n\n"
+    
+    # Extraction plus robuste des sections basées sur les marqueurs **...**
+    def extraire_section(texte, prefix):
+        if prefix not in texte: return None
+        # On découpe à partir du préfixe
+        suite = texte.split(prefix)[1]
+        # On s'arrête au prochain marqueur de section **
+        if "**" in suite:
+            return suite.split("**")[0].strip()
+        return suite.strip()
 
-    # Activité entreprise
-    if "**Activité entreprise:**" in details:
-        activite = details.split("**Activité entreprise:**")[1].split("**")[0] if "**" in details.split("**Activité entreprise:**")[1] else details.split("**Activité entreprise:**")[1][:300]
-        sections.append(f"💼 *Activité entreprise :*\n{activite.strip()[:250]}")
+    act = extraire_section(details, "**Activité entreprise:**")
+    miss = extraire_section(details, "**Missions:**")
+    prof = extraire_section(details, "**Profil recherché:**")
 
-    # Missions
-    if "**Missions:**" in details:
-        missions = details.split("**Missions:**")[1].split("**")[0] if "**" in details.split("**Missions:**")[1] else details.split("**Missions:**")[1][:400]
-        missions_clean = missions.strip()
-        # Limiter à 5 lignes
-        missions_lines = [line.strip() for line in missions_clean.split('\n') if line.strip() and not line.startswith('**')][:5]
-        if missions_lines:
-            sections.append(f"📋 *Missions :*\n" + "\n".join(missions_lines))
+    sections_html = []
+    # Augmentation des limites (max total ~4000 par message Telegram)
+    if act:
+        sections_html.append(f"💼 <b>ACTIVITÉ ENTREPRISE</b>\n{escape_html(act[:1000])}")
+    if miss:
+        sections_html.append(f"📋 <b>MISSIONS</b>\n{escape_html(miss[:2000])}")
+    if prof:
+        sections_html.append(f"👤 <b>PROFIL RECHERCHÉ</b>\n{escape_html(prof[:1000])}")
 
-    # Profil
-    if "**Profil recherché:**" in details:
-        profil = details.split("**Profil recherché:**")[1].split("**")[0] if "**" in details.split("**Profil recherché:**")[1] else details.split("**Profil recherché:**")[1][:400]
-        profil_clean = profil.strip()
-        profil_lines = [line.strip() for line in profil_clean.split('\n') if line.strip() and not line.startswith('**')][:4]
-        if profil_lines:
-            sections.append(f"👤 *Profil recherché :*\n" + "\n".join(profil_lines))
-
-    message = f"📌 *{titre}*\n🏢 {entreprise}  •  📅 {date_pub}\n"
-
-    if sections:
-        message += "\n\n" + "\n\n".join(sections)
-
-    return message
-
-
-def envoyer_offre(offre_data):
-    """
-    Envoie une offre sur Telegram sous forme de card compacte.
-    Les détails complets sont affichés uniquement sur clic du bouton "Voir plus".
-    """
-    if not TELEGRAM_TOKEN or TELEGRAM_CHAT_ID == 'votre_chat_id_ici':
-        print("⚠️  Configuration Telegram manquante (vérifie .env)")
-        return False
-
-    try:
-        titre = offre_data.get('titre', 'Sans titre')
-        entreprise = offre_data.get('entreprise', 'Non spécifiée')
-        date_pub = offre_data.get('date_publication', 'Date inconnue')
-        url = offre_data.get('url', '')
-        details = offre_data.get('details', '')
-
-        # Sauvegarder dans le cache partagé (SQLite)
-        cache_key = sauvegarder_offre_cache(offre_data)
-
-        # Résumé compact
-        resume_sections = []
-
-        # Résumé missions (2 lignes max)
-        if "**Missions:**" in details:
-            missions = details.split("**Missions:**")[1].split("**")[0] if "**" in details.split("**Missions:**")[1] else details.split("**Missions:**")[1]
-            missions_lines = [line.strip() for line in missions.split('\n') if line.strip() and not line.startswith('•') and not line.startswith('-') and not line.startswith('▪')][:2]
-            if missions_lines:
-                resume_sections.append("📋 " + " | ".join([line[:50] for line in missions_lines]))
-
-        # Résumé profil (1 ligne)
-        if "**Profil recherché:**" in details:
-            profil = details.split("**Profil recherché:**")[1].split("**")[0] if "**" in details.split("**Profil recherché:**")[1] else details.split("**Profil recherché:**")[1]
-            profil_lines = [line.strip() for line in profil.split('\n') if line.strip() and not line.startswith('•') and not line.startswith('-') and not line.startswith('▪')][:1]
-            if profil_lines:
-                resume_sections.append(f"👤 {profil_lines[0][:60]}")
-
-        # Construire le message compact
-        card_message = f"""💼 *{titre}*
-
-🏢 {entreprise}  •  📅 {date_pub}"""
-
-        if resume_sections:
-            card_message += "\n\n" + "\n".join(resume_sections)
-
-        # Boutons: Voir plus (callback) + Postuler (URL)
-        keyboard = {
-            "inline_keyboard": [
-                [
-                    {"text": "📄 Voir plus", "callback_data": cache_key},
-                    {"text": "🔗 Postuler", "url": url}
-                ]
-            ]
-        }
-
-        # Envoyer la card
-        response = requests.post(
-            f"{TELEGRAM_API_URL}/sendMessage",
-            json={
-                "chat_id": TELEGRAM_CHAT_ID,
-                "text": card_message,
-                "parse_mode": "Markdown",
-                "reply_markup": keyboard,
-                "disable_web_page_preview": True
-            },
-            timeout=30
-        )
-
-        if response.status_code == 200:
-            print(f"  📤 Card envoyée : {titre[:40]}...")
-            print(f"     (Clique 'Voir plus' pour les détails)")
-            return True
-        else:
-            print(f"  ⚠️  Erreur Telegram ({response.status_code}): {response.text[:100]}")
-            return False
-
-    except Exception as e:
-        print(f"  ⚠️  Échec envoi Telegram: {e}")
-        return False
-
-
-def envoyer_message_simple(message):
-    """Envoie un message texte simple sur Telegram."""
-    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
-        return False
-
-    try:
-        payload = {
-            "chat_id": TELEGRAM_CHAT_ID,
-            "text": message,
-            "parse_mode": "Markdown"
-        }
-
-        response = requests.post(
-            f"{TELEGRAM_API_URL}/sendMessage",
-            json=payload,
-            timeout=30
-        )
-
-        return response.status_code == 200
-
-    except:
-        return False
-
-
-def tester_configuration():
-    """Teste la configuration Telegram en envoyant un message de test."""
-    if not TELEGRAM_TOKEN or TELEGRAM_CHAT_ID == 'votre_chat_id_ici':
-        print("❌ Configuration Telegram incomplète")
-        print("   Modifie le fichier config/.env avec ton TOKEN et CHAT_ID")
-        return False
-
-    print("🧪 Test de la configuration Telegram...")
-    success = envoyer_message_simple("✅ *Bot PortalJob activé !*\n\nJe vais t'envoyer les nouvelles offres dès qu'elles sont publiées.")
-
-    if success:
-        print("✅ Test réussi - Message envoyé sur Telegram !")
+    if sections_html:
+        msg += "\n\n".join(sections_html)
     else:
-        print("❌ Test échoué - Vérifie ton TOKEN et CHAT_ID")
+        # Fallback si aucun tag n'est trouvé
+        msg += escape_html(details[:3500])
 
-    return success
+    msg += f'\n\n<a href="{url}">🚀 Postuler sur PortalJob</a>'
+    return msg
 
+async def envoyer_offre_async(bot, offre_data):
+    """Envoie une offre sur Telegram."""
+    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
+        logger.warning("Configuration Telegram manquante")
+        return False
 
-if __name__ == "__main__":
-    tester_configuration()
+    try:
+        # Sauvegarder dans le cache temporaire pour le callback "Voir plus"
+        cache_key = await ajouter_offre_async(offre_data)
+        
+        text = formater_card_compacte(offre_data)
+        keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("📄 Voir plus", callback_data=cache_key),
+                InlineKeyboardButton("🔗 Postuler", url=offre_data.get('url', ''))
+            ]
+        ])
+
+        await bot.send_message(
+            chat_id=TELEGRAM_CHAT_ID,
+            text=text,
+            parse_mode=ParseMode.HTML,
+            reply_markup=keyboard,
+            disable_web_page_preview=True
+        )
+        logger.info(f"📤 Offre envoyée: {offre_data.get('titre', '')}")
+        return True
+    except Exception as e:
+        logger.error(f"Erreur envoi Telegram: {e}")
+        return False
+
+# Fonction sync pour test rapide ou compatibilité
+def envoyer_offre(offre_data):
+    # Note: Dans le nouveau système async, cette fonction ne sera plus utilisée directement par le scraper.
+    logger.warning("Appel à envoyer_offre (sync) - devrait être migré vers envoyer_offre_async")
+    return True

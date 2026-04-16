@@ -2,9 +2,20 @@
 
 # Scraping
 playwright>=1.40.0
+firecrawl-py>=1.0.0
+beautifulsoup4>=4.12.0
 
 # Telegram
+python-telegram-bot[job-queue]>=20.7
 requests>=2.31.0
+httpx>=0.25.0
+
+
+# Database
+aiosqlite>=0.19.0
+
+# Concurrency & Scheduling
+apscheduler>=3.10.0
 
 # Extraction PDF/PDF scannés
 PyPDF2>=3.0.0
@@ -20,5 +31,6 @@ huggingface-hub>=0.20.0
 # Configuration
 python-dotenv>=1.0.0
 
-# Turso (SQLite cloud) - optionnel, fallback sur SQLite local
-libsql-experimental>=0.0.41
+# Turso (SQLite cloud)
+libsql-experimental>=0.0.34
+
