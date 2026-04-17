@@ -94,15 +94,13 @@ async def envoyer_offre_async(bot, offre_data):
             InlineKeyboardButton("🔗 Lien Original", url=offre_data.get('url', ''))
         ]
         
-        bouton_ia = [InlineKeyboardButton("🤖 Postuler via AI", callback_data=f"apply_{cache_key}")]
-        
         boutons_intel = []
         if offre_data.get('linkedin_url'):
             boutons_intel.append(InlineKeyboardButton("🟦 LinkedIn", url=offre_data['linkedin_url']))
         if offre_data.get('facebook_url'):
             boutons_intel.append(InlineKeyboardButton("🟦 Facebook", url=offre_data['facebook_url']))
         
-        layout = [boutons_principaux, bouton_ia]
+        layout = [boutons_principaux]
         if boutons_intel:
             layout.append(boutons_intel)
             

@@ -91,13 +91,13 @@ async def postuler_offre_portal(url_offre, lettre_motivation):
 
             # 4. Soumettre la candidature
             # Chercher le bouton final qui contient "Envoyer", "Valider", "Confirmer"
-            bouton_validation = page.locator("button").filter(has_text=re.compile(r"envoyer|valider|confirmer|postuler", re.IGNORECASE)).first
+            bouton_validation = page.locator("button").filter(has_text=re.compile(r"envoyer|valider|confirmer", re.IGNORECASE)).first
             
             if await bouton_validation.count() > 0:
                 logger.info("Clic sur le bouton de soumission finale...")
                 if not HEADLESS:
                     await page.wait_for_timeout(2000) # Laisse le temps de voir l'action si on debug
-                await bouton_validation.click()
+                await bouton_validation.click(force=True)
                 await page.wait_for_timeout(5000) # Attente que la page confirme
             else:
                 if browser: await browser.close()

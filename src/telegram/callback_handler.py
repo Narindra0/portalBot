@@ -71,7 +71,8 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text = formater_details_complets(offre)
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("📝 Créer Lettre de Motivation", callback_data=f"lm_{data}")],
-            [InlineKeyboardButton("🔍 Profil Société", callback_data=f"intel_{data}")]
+            [InlineKeyboardButton("🔍 Profil Société", callback_data=f"intel_{data}")],
+            [InlineKeyboardButton("🤖 Postuler via AI", callback_data=f"apply_{data}")]
         ])
         
         # On envoie un nouveau message pour les détails (plus lisible)
@@ -204,7 +205,8 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if success_apply:
             await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"✅ <b>SUCCÈS :</b>\n{msg_apply}", parse_mode=ParseMode.HTML)
         else:
-            await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"❌ <b>ÉCHEC DE L'AUTOMATISATION :</b>\n{msg_apply}", parse_mode=ParseMode.HTML)
+            import html
+            await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"❌ <b>ÉCHEC DE L'AUTOMATISATION :</b>\n{html.escape(str(msg_apply))}", parse_mode=ParseMode.HTML)
 
 
 # --- CONFIGURATION CV (CONVERSATION) ---
