@@ -69,7 +69,13 @@ def formater_details_complets(offre_data):
         # Fallback si aucun tag n'est trouvé
         msg += escape_html(details[:3500])
 
-    msg += f'\n\n<a href="{url}">🚀 Postuler sur PortalJob</a>'
+    # Liens Intelligence
+    intel_links = []
+    if offre_data.get('website_url'): intel_links.append(f'🌐 <a href="{offre_data["website_url"]}">Site Web</a>')
+    if intel_links:
+        msg += "\n\n" + " | ".join(intel_links)
+
+    msg += f'\n\n🚀 <a href="{url}">Postuler sur la source</a>'
     return msg
 
 async def envoyer_offre_async(bot, offre_data):
@@ -83,12 +89,24 @@ async def envoyer_offre_async(bot, offre_data):
         cache_key = await ajouter_offre_async(offre_data)
         
         text = formater_card_compacte(offre_data)
-        keyboard = InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("📄 Voir plus", callback_data=cache_key),
-                InlineKeyboardButton("🔗 Postuler", url=offre_data.get('url', ''))
-            ]
-        ])
+        
+        # Construction dynamique du clavier
+        boutons_principaux = [
+            InlineKeyboardButton("📄 Voir plus", callback_data=cache_key),
+            InlineKeyboardButton("🔗 Postuler", url=offre_data.get('url', ''))
+        ]
+        
+        boutons_intel = []
+        if offre_data.get('linkedin_url'):
+            boutons_intel.append(InlineKeyboardButton("🟦 LinkedIn", url=offre_data['linkedin_url']))
+        if offre_data.get('facebook_url'):
+            boutons_intel.append(InlineKeyboardButton("🟦 Facebook", url=offre_data['facebook_url']))
+        
+        layout = [boutons_principaux]
+        if boutons_intel:
+            layout.append(boutons_intel)
+            
+        keyboard = InlineKeyboardMarkup(layout)
 
         await bot.send_message(
             chat_id=TELEGRAM_CHAT_ID,

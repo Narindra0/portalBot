@@ -20,6 +20,7 @@ from ..storage.pdf_extractor import traiter_fichier_cv
 from ..llm.generator import creer_lettre_motivation, formater_lettre_pour_telegram
 from .bot import formater_details_complets
 from ..utils.logger import logger
+from ..utils.intel import CompanyIntel
 
 # États de la conversation pour la configuration du CV
 CHOOSING, TYPING_NAME, TYPING_EMAIL, TYPING_PHONE, TYPING_PORTFOLIO, TYPING_CV = range(6)
@@ -68,7 +69,8 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         text = formater_details_complets(offre)
         keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("📝 Créer Lettre de Motivation", callback_data=f"lm_{data}")]
+            [InlineKeyboardButton("📝 Créer Lettre de Motivation", callback_data=f"lm_{data}")],
+            [InlineKeyboardButton("🔍 Profil Société", callback_data=f"intel_{data}")]
         ])
         
         # On envoie un nouveau message pour les détails (plus lisible)
@@ -105,28 +107,119 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         if success:
             parties = formater_lettre_pour_telegram(result)
-            header = f"✉️ <b>LETTRE DE MOTIVATION</b>\n📌 {offre['titre']}\n🏢 {offre['entreprise']}\n\n<code>{'═'*30}</code>"
+            header = f"✉️ <b>LETTRE DE MOTIVATION</b>\n📌 {offre['titre']}\n🏢 {offre['entreprise']}\n"
             await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=header, parse_mode=ParseMode.HTML)
             
             for p in parties:
                 await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=p)
                 
-            footer = f"<code>{'═'*30}</code>\n✅ <b>Lettre prête !</b>"
+            footer = "✅ <b>Lettre prête !</b>"
             await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=footer, parse_mode=ParseMode.HTML)
         else:
             await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"❌ Erreur génération: {result}")
 
+    elif data.startswith("intel_"):
+         # Recherche d'intelligence société auto
+         cache_key = data[6:]
+         offre = await recuperer_offre_async(cache_key)
+         if not offre:
+             await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text="❌ Offre expirée.")
+             return
+         
+         nom = offre.get('entreprise')
+         msg_wait = await context.bot.send_message(
+             chat_id=TELEGRAM_CHAT_ID, 
+             text=f"🔍 Recherche d'infos sur <b>{nom}</b>...", 
+             parse_mode=ParseMode.HTML
+         )
+         
+         intel = await CompanyIntel.search_company_info(nom)
+         await msg_wait.delete()
+         
+         if not intel or not any(intel.values()):
+             await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"❌ Aucune info trouvée pour <b>{nom}</b>.", parse_mode=ParseMode.HTML)
+             return
+             
+         res = f"📊 <b>Intelligence Entreprise : {nom}</b>\n\n"
+         if intel['website']: res += f"🌐 <b>Site</b> : {intel['website']}\n"
+         if intel['linkedin']: res += f"🟦 <b>LinkedIn</b> : {intel['linkedin']}\n"
+         if intel['facebook']: res += f"🟦 <b>Facebook</b> : {intel['facebook']}\n"
+         
+         boutons = []
+         if intel['linkedin']: boutons.append(InlineKeyboardButton("LinkedIn", url=intel['linkedin']))
+         if intel['facebook']: boutons.append(InlineKeyboardButton("Facebook", url=intel['facebook']))
+         if intel['website']: boutons.append(InlineKeyboardButton("Site Web", url=intel['website']))
+         
+         keyboard = InlineKeyboardMarkup([boutons]) if boutons else None
+         await context.bot.send_message(
+             chat_id=TELEGRAM_CHAT_ID, 
+             text=res, 
+             parse_mode=ParseMode.HTML, 
+             reply_markup=keyboard, 
+             disable_web_page_preview=True
+         )
+
 # --- CONFIGURATION CV (CONVERSATION) ---
 
-async def config_cv_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def voir_cv(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Commande /voir_cv."""
+    cv = await recuperer_cv_async()
+    if not cv:
+        await update.message.reply_text("⚠️ Aucun profil configuré. Utilise /configurer_cv.")
+        return
+
     msg = (
-        "📝 <b>Configuration du CV</b>\n\n"
+        "👤 <b>Ton Profil Actuel</b>\n\n"
+        f"📛 <b>Nom</b> : {cv['nom']}\n"
+        f"📧 <b>Email</b> : {cv['email']}\n"
+        f"📱 <b>Tel</b> : {cv['telephone'] or 'Non spécifié'}\n"
+        f"🌐 <b>Portfolio</b> : {cv['portfolio'] or 'Non spécifié'}\n\n"
+        "📄 <b>Résumé du CV</b> :\n"
+        f"<code>{cv['cv_text'][:500]}...</code>"
+    )
+    await update.message.reply_text(msg, parse_mode=ParseMode.HTML)
+
+async def config_cv_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    cv = await recuperer_cv_async()
+    prefix = "🔄 <b>Mise à jour de ton profil</b>\n\n" if cv else "📝 <b>Configuration du CV</b>\n\n"
+    
+    msg = (
+        f"{prefix}"
         "Comment souhaites-tu fournir tes informations ?\n\n"
         "📄 <b>Option 1</b> : Envoie un PDF ou une Photo (OCR)\n"
         "✏️ <b>Option 2</b> : Tape 'texte' pour saisir manuellement"
     )
     await update.message.reply_text(msg, parse_mode=ParseMode.HTML)
     return CHOOSING
+
+async def search_company_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Commande /search <nom_entreprise>."""
+    if not context.args:
+        await update.message.reply_text("🔎 Utilisation : <code>/search Nom de l'entreprise</code>", parse_mode=ParseMode.HTML)
+        return
+
+    nom = " ".join(context.args)
+    msg_wait = await update.message.reply_text(f"🔍 Recherche d'infos sur <b>{nom}</b>...", parse_mode=ParseMode.HTML)
+    
+    intel = await CompanyIntel.search_company_info(nom)
+    
+    if not intel or not any(intel.values()):
+        await msg_wait.edit_text(f"❌ Désolé, aucune information trouvée pour <b>{nom}</b>.", parse_mode=ParseMode.HTML)
+        return
+
+    res = f"📊 <b>Résultats pour {nom}</b> :\n\n"
+    if intel['website']: res += f"🌐 <b>Site</b> : {intel['website']}\n"
+    if intel['linkedin']: res += f"🟦 <b>LinkedIn</b> : {intel['linkedin']}\n"
+    if intel['facebook']: res += f"🟦 <b>Facebook</b> : {intel['facebook']}\n"
+    
+    boutons = []
+    if intel['linkedin']: boutons.append(InlineKeyboardButton("LinkedIn", url=intel['linkedin']))
+    if intel['facebook']: boutons.append(InlineKeyboardButton("Facebook", url=intel['facebook']))
+    if intel['website']: boutons.append(InlineKeyboardButton("Site Web", url=intel['website']))
+    
+    keyboard = InlineKeyboardMarkup([boutons]) if boutons else None
+    await msg_wait.delete()
+    await update.message.reply_text(res, parse_mode=ParseMode.HTML, reply_markup=keyboard, disable_web_page_preview=True)
 
 async def config_cv_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.lower()
@@ -251,6 +344,8 @@ def setup_application():
     
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("aide", aide))
+    app.add_handler(CommandHandler("voir_cv", voir_cv))
+    app.add_handler(CommandHandler("search", search_company_cmd))
     app.add_handler(cv_handler)
     app.add_handler(CallbackQueryHandler(handle_callback))
     

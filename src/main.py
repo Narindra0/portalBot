@@ -7,6 +7,7 @@ import sys
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from .scraper.portal import surveiller_portal
+from .scraper.asako import surveiller_asako
 from .telegram.callback_handler import setup_application
 from .storage.cache_db import init_db_async
 from .utils.logger import logger
@@ -14,7 +15,11 @@ from .utils.logger import logger
 async def run_scraper_task(bot):
     """Encapsulation de la tâche scraper pour le scheduler."""
     try:
-        await surveiller_portal(telegram_bot=bot)
+        # Lancement simultané des scrapers
+        await asyncio.gather(
+            surveiller_portal(telegram_bot=bot),
+            surveiller_asako(telegram_bot=bot)
+        )
     except Exception as e:
         logger.error(f"Erreur durant la tâche planifiée : {e}")
 
@@ -41,9 +46,12 @@ async def main():
     
     # --- Mode SCRAPER (exécution unique) ---
     if mode == "scraper":
-        logger.info("🔍 Lancement du scan ponctuel...")
+        logger.info("🔍 Lancement du scan ponctuel (PortalJob + Asako)...")
         try:
-            await surveiller_portal(telegram_bot=app.bot)
+            await asyncio.gather(
+                surveiller_portal(telegram_bot=app.bot),
+                surveiller_asako(telegram_bot=app.bot)
+            )
             logger.info("✅ Scan terminé avec succès.")
         except Exception as e:
             logger.error(f"❌ Erreur durant le scan : {e}")

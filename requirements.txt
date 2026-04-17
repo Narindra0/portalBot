@@ -34,3 +34,7 @@ python-dotenv>=1.0.0
 # Turso (SQLite cloud)
 libsql-experimental>=0.0.34
 
+# Intelligence & Résilience
+googlesearch-python>=1.2.3
+tenacity>=8.2.0
+

@@ -144,10 +144,20 @@ async def init_db_async():
                     date_publication TEXT,
                     details TEXT,
                     date_decouverte TEXT,
+                    linkedin_url TEXT,
+                    facebook_url TEXT,
+                    website_url TEXT,
                     date_enregistrement TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
             
+            # Migration : Ajouter les nouvelles colonnes si elles manquent
+            for col in ['linkedin_url', 'facebook_url', 'website_url']:
+                try:
+                    await db.execute(f'ALTER TABLE offres_permanentes ADD COLUMN {col} TEXT')
+                    await db.commit()
+                except: pass
+
             await db.execute('CREATE INDEX IF NOT EXISTS idx_offres_date ON offres_permanentes(date_enregistrement DESC)')
             await db.commit()
 
@@ -240,9 +250,24 @@ async def recuperer_cv_async():
     }
 
 async def offre_existe_async(url):
-    """Vérifie si l'offre a déjà été traitée (stockage permanent)."""
+    """Vérifie si l'offre a déjà été traitée (stockage permanent) via son URL."""
     async with get_async_conn() as db:
         cursor = await db.execute('SELECT 1 FROM offres_permanentes WHERE url = ?', (url,))
+        async with cursor:
+            return await cursor.fetchone() is not None
+
+async def offre_existe_doublon_async(titre, entreprise):
+    """
+    Vérifie si une offre similaire existe déjà (même titre et entreprise).
+    Utile pour éviter les doublons entre différentes sources (PortalJob / Asako).
+    """
+    if not titre or not entreprise: return False
+    async with get_async_conn() as db:
+        # On utilise une recherche insensible à la casse et flexible
+        cursor = await db.execute('''
+            SELECT 1 FROM offres_permanentes 
+            WHERE LOWER(titre) = LOWER(?) AND LOWER(entreprise) = LOWER(?)
+        ''', (titre, entreprise))
         async with cursor:
             return await cursor.fetchone() is not None
 
@@ -253,15 +278,19 @@ async def sauvegarder_offre_permanente_async(offre_data):
             try:
                 await db.execute('''
                     INSERT OR REPLACE INTO offres_permanentes
-                    (url, titre, entreprise, date_publication, details, date_decouverte)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    (url, titre, entreprise, date_publication, details, date_decouverte, 
+                     linkedin_url, facebook_url, website_url)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (
                     offre_data.get('url', ''),
                     offre_data.get('titre', ''),
                     offre_data.get('entreprise', ''),
                     offre_data.get('date_publication', ''),
                     offre_data.get('details', ''),
-                    offre_data.get('date_decouverte', '')
+                    offre_data.get('date_decouverte', ''),
+                    offre_data.get('linkedin_url'),
+                    offre_data.get('facebook_url'),
+                    offre_data.get('website_url')
                 ))
                 await db.commit()
                 return True
