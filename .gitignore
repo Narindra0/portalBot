@@ -56,3 +56,6 @@ session_*/
 # OS
 .DS_Store
 Thumbs.db
+
+portal_session.json
+asako_session.json
