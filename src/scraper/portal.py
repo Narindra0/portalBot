@@ -128,19 +128,30 @@ class PortalScraper(BaseScraper):
         try:
             await page.goto(url, wait_until="networkidle", timeout=30000)
             details = []
-            sections = [("Activité de l'entreprise", "Activité entreprise:"), ("Missions", "Missions:"), ("Profil recherché", "Profil recherché:")]
-            for titre_section, prefix in sections:
+            
+            # Récupérer tous les titres H2 de la page
+            sections = await page.locator('h2').all()
+            for heading in sections:
                 try:
-                    heading = page.locator(f'h2:has-text("{titre_section}")').first
-                    if await heading.count() > 0:
-                        parent = heading.locator('xpath=..').first
-                        content_div = parent.locator('div.text-\\[16px\\]').first
-                        if await content_div.count() > 0:
-                            text = (await content_div.inner_text()).strip()
-                            if text: details.append(f"**{prefix}**\n{text}")
+                    titre = (await heading.inner_text()).strip()
+                    if not titre: continue
+                    
+                    # Le contenu est généralement dans le div sibling ou parent-sibling avec class text-[16px]
+                    # On cherche dans le même conteneur parent
+                    parent = heading.locator('xpath=..').first
+                    content_div = parent.locator('div.text-\\[16px\\]').first
+                    
+                    if await content_div.count() > 0:
+                        text = (await content_div.inner_text()).strip()
+                        if text:
+                            # Formate avec le titre dynamique
+                            details.append(f"**{titre}:**\n{text}")
                 except: continue
-            return '\n\n'.join(details) if details else "Détails non disponibles."
-        except: return "Détails non disponibles."
+            
+            return "\n\n".join(details) if details else "Détails non disponibles."
+        except Exception as e:
+            logger.error(f"❌ Erreur détails PortalJob ({url}): {e}")
+            return "Détails non disponibles."
 
 # Compatibilité pour garder main.py fonctionnel pendant la transition
 async def surveiller_portal(telegram_bot=None):

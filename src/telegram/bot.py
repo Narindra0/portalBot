@@ -40,33 +40,31 @@ def formater_details_complets(offre_data):
 
     msg = f"📌 <b>{titre}</b>\n🏢 {entreprise}\n\n"
     
-    # Extraction plus robuste des sections basées sur les marqueurs **...**
-    def extraire_section(texte, prefix):
-        if prefix not in texte: return None
-        # On découpe à partir du préfixe
-        suite = texte.split(prefix)[1]
-        # On s'arrête au prochain marqueur de section **
-        if "**" in suite:
-            return suite.split("**")[0].strip()
-        return suite.strip()
-
-    act = extraire_section(details, "**Activité entreprise:**")
-    miss = extraire_section(details, "**Missions:**")
-    prof = extraire_section(details, "**Profil recherché:**")
-
+    import re
+    # Extraction dynamique de toutes les sections délimitées par **Titre:**
+    # On cherche le motif **Texte:** suivi du contenu jusqu'au prochain ** ou la fin
+    sections = re.findall(r'\*\*(.*?):\*\*\n(.*?)(?=\n\n\*\*|\Z)', details, re.DOTALL)
+    
     sections_html = []
-    # Augmentation des limites (max total ~4000 par message Telegram)
-    if act:
-        sections_html.append(f"💼 <b>ACTIVITÉ ENTREPRISE</b>\n{escape_html(act[:1000])}")
-    if miss:
-        sections_html.append(f"📋 <b>MISSIONS</b>\n{escape_html(miss[:2000])}")
-    if prof:
-        sections_html.append(f"👤 <b>PROFIL RECHERCHÉ</b>\n{escape_html(prof[:1000])}")
+    emojis_map = {
+        "Missions": "📋",
+        "Profil recherché": "👤",
+        "Activité de l'entreprise": "💼",
+        "Activité entreprise": "💼",
+        "Atouts": "⭐",
+        "Avantages": "🎁",
+        "Conditions": "📝"
+    }
+
+    for titre, contenu in sections:
+        titre_clean = titre.strip()
+        emoji = emojis_map.get(titre_clean, "🔹")
+        sections_html.append(f"{emoji} <b>{titre_clean.upper()}</b>\n{escape_html(contenu.strip()[:1500])}")
 
     if sections_html:
         msg += "\n\n".join(sections_html)
     else:
-        # Fallback si aucun tag n'est trouvé
+        # Fallback si le formatage **...** a échoué
         msg += escape_html(details[:3500])
 
     # Liens Intelligence

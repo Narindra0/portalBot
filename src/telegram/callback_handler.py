@@ -141,6 +141,10 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
              return
              
          res = f"📊 <b>Intelligence Entreprise : {nom}</b>\n\n"
+         
+         if intel.get('summary'):
+             res += f"✨ <b>Résumé IA</b> :\n<i>{intel['summary']}</i>\n\n"
+             
          if intel['website']: res += f"🌐 <b>Site</b> : {intel['website']}\n"
          if intel['linkedin']: res += f"🟦 <b>LinkedIn</b> : {intel['linkedin']}\n"
          if intel['facebook']: res += f"🟦 <b>Facebook</b> : {intel['facebook']}\n"
@@ -208,6 +212,10 @@ async def search_company_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return
 
     res = f"📊 <b>Résultats pour {nom}</b> :\n\n"
+
+    if intel.get('summary'):
+        res += f"✨ <b>Résumé IA</b> :\n<i>{intel['summary']}</i>\n\n"
+
     if intel['website']: res += f"🌐 <b>Site</b> : {intel['website']}\n"
     if intel['linkedin']: res += f"🟦 <b>LinkedIn</b> : {intel['linkedin']}\n"
     if intel['facebook']: res += f"🟦 <b>Facebook</b> : {intel['facebook']}\n"

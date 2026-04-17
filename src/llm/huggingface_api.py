@@ -126,6 +126,44 @@ async def generer_lettre_motivation_async(cv_text, offre_titre, offre_entreprise
     
     return None
 
+async def generer_resume_entreprise_async(nom_entreprise, contexte=""):
+    """Génère un résumé court et percutant d'une entreprise."""
+    if not HF_API_KEY: return None
+
+    api_url = "https://router.huggingface.co/v1/chat/completions"
+    headers = {"Authorization": f"Bearer {HF_API_KEY}", "Content-Type": "application/json"}
+    
+    prompt = (
+        f"Tu es un expert du marché de l'emploi à Madagascar. Résume en une phrase ou deux "
+        f"l'activité principale de l'entreprise '{nom_entreprise}'.\n\n"
+    )
+    if contexte:
+        prompt += f"Utilise ce contexte pour être précis : {contexte}\n\n"
+    
+    prompt += "RÈGLES : Pas de gras, pas d'introduction, juste le résumé direct. Sois professionnel et efficace."
+
+    payload = {
+        "model": HF_MODEL,
+        "messages": [
+            {"role": "system", "content": "Tu rédiges des résumés d'entreprises courts et précis."},
+            {"role": "user", "content": prompt}
+        ],
+        "max_tokens": 150,
+        "temperature": 0.4
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            resp = await client.post(api_url, headers=headers, json=payload)
+            if resp.status_code == 200:
+                result = resp.json()
+                raw_text = result['choices'][0]['message']['content']
+                clean_text = re.sub(r'<think>.*?</think>', '', raw_text, flags=re.DOTALL).strip()
+                return clean_text
+    except Exception as e:
+        logger.error(f"Erreur génération résumé: {e}")
+    return None
+
 def generer_lettre_motivation(cv, t, e, d):
     """Wrapper synchrone pour la fonction async."""
     import asyncio
