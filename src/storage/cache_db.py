@@ -64,11 +64,20 @@ class AsyncCursorWrapper:
     async def fetchall(self):
         return await asyncio.to_thread(self.cursor.fetchall)
     
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        row = await self.fetchone()
+        if row is None:
+            raise StopAsyncIteration
+        return row
+
     async def __aenter__(self):
         return self
         
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        pass # Le curseur libsql se ferme généralement avec la connexion ou auto
+        pass 
 
 def get_async_conn():
     """
@@ -76,10 +85,14 @@ def get_async_conn():
     Bascule sur Turso si configuré (via un wrapper async), sinon utilise aiosqlite local.
     """
     if USE_TURSO:
-        # logger.info(f"🌐 Connexion à Turso (Cloud): {TURSO_DATABASE_URL[:20]}...")
+        logger.info(f"🌐 Connexion à Turso (Cloud): {TURSO_DATABASE_URL[:25]}...")
         # libsql.connect est synchrone, on le wrap pour l'asynchrone
-        conn = libsql.connect(TURSO_DATABASE_URL, auth_token=TURSO_AUTH_TOKEN)
-        return AsyncTursoConn(conn)
+        try:
+            conn = libsql.connect(TURSO_DATABASE_URL, auth_token=TURSO_AUTH_TOKEN)
+            return AsyncTursoConn(conn)
+        except Exception as e:
+            logger.error(f"❌ Erreur connexion Turso: {e}. Fallback local.")
+            return aiosqlite.connect(DB_FILE)
     else:
         # aiosqlite est déjà asynchrone
         return aiosqlite.connect(DB_FILE)
@@ -167,10 +180,11 @@ async def ajouter_offre_async(offre_data):
 async def recuperer_offre_async(cache_key):
     """Récupère une offre depuis le cache temporaire."""
     async with get_async_conn() as db:
-        async with db.execute('''
+        cursor = await db.execute('''
             SELECT titre, entreprise, date_publication, url, details, timestamp
             FROM offres WHERE cache_key = ?
-        ''', (cache_key,)) as cursor:
+        ''', (cache_key,))
+        async with cursor:
             row = await cursor.fetchone()
             
     if row is None:
@@ -212,7 +226,8 @@ async def sauvegarder_cv_async(nom, email, telephone, portfolio, cv_text):
 
 async def recuperer_cv_async():
     async with get_async_conn() as db:
-        async with db.execute('SELECT nom, email, telephone, portfolio, cv_text, date_mise_a_jour FROM cv_utilisateur WHERE id = 1') as cursor:
+        cursor = await db.execute('SELECT nom, email, telephone, portfolio, cv_text, date_mise_a_jour FROM cv_utilisateur WHERE id = 1')
+        async with cursor:
             row = await cursor.fetchone()
     if not row: return None
     return {
@@ -227,7 +242,8 @@ async def recuperer_cv_async():
 async def offre_existe_async(url):
     """Vérifie si l'offre a déjà été traitée (stockage permanent)."""
     async with get_async_conn() as db:
-        async with db.execute('SELECT 1 FROM offres_permanentes WHERE url = ?', (url,)) as cursor:
+        cursor = await db.execute('SELECT 1 FROM offres_permanentes WHERE url = ?', (url,))
+        async with cursor:
             return await cursor.fetchone() is not None
 
 async def sauvegarder_offre_permanente_async(offre_data):
@@ -255,7 +271,8 @@ async def sauvegarder_offre_permanente_async(offre_data):
 
 async def compter_offres_async():
     async with get_async_conn() as db:
-        async with db.execute('SELECT COUNT(*) FROM offres_permanentes') as cursor:
+        cursor = await db.execute('SELECT COUNT(*) FROM offres_permanentes')
+        async with cursor:
             row = await cursor.fetchone()
             return row[0] if row else 0
 
