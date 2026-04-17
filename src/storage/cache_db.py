@@ -305,6 +305,31 @@ async def compter_offres_async():
             row = await cursor.fetchone()
             return row[0] if row else 0
 
+async def lister_offres_permanentes_async(limit=10, offset=0):
+    async with get_async_conn() as db:
+        cursor = await db.execute('''
+            SELECT url, titre, entreprise, date_publication, details, linkedin_url, facebook_url, website_url 
+            FROM offres_permanentes 
+            ORDER BY date_enregistrement DESC 
+            LIMIT ? OFFSET ?
+        ''', (limit, offset))
+        
+        offres = []
+        async with cursor:
+            rows = await cursor.fetchall()
+            for row in rows:
+                offres.append({
+                    'url': row[0],
+                    'titre': row[1],
+                    'entreprise': row[2],
+                    'date_publication': row[3],
+                    'details': row[4],
+                    'linkedin_url': row[5],
+                    'facebook_url': row[6],
+                    'website_url': row[7]
+                })
+        return offres
+
 # --- Compatibilité Synchrone (Wrapper autour de l'async) ---
 def _run_async(coro):
     try:

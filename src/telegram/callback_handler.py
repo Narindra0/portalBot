@@ -14,7 +14,9 @@ from telegram.constants import ParseMode
 from ..config import TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, CV_PDF_PATH
 from ..storage.cache_db import (
     recuperer_offre_async, sauvegarder_cv_async, 
-    recuperer_cv_async, vider_cache
+    recuperer_cv_async, vider_cache,
+    lister_offres_permanentes_async, compter_offres_async,
+    ajouter_offre_async
 )
 from ..storage.pdf_extractor import traiter_fichier_cv
 from ..llm.generator import creer_lettre_motivation, formater_lettre_pour_telegram
@@ -38,6 +40,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "👋 <b>Bienvenue sur PortalJob Scraper !</b>\n\n"
         "Je suis configuré pour t'envoyer les dernières offres de développement à Madagascar.\n\n"
         "🏠 <b>Commandes disponibles :</b>\n"
+        "/job - Voir les dernières offres en base\n"
         "/configurer_cv - Configurer ton profil pour les lettres de motivation\n"
         "/voir_cv - Voir ton profil actuel\n"
         "/aide - Afficher l'aide"
@@ -51,17 +54,75 @@ async def aide(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• <b>Scraping</b> : Je vérifie PortalJob toutes les 30 minutes.\n"
         "• <b>Lettres de Motivation</b> : Une fois ton CV configuré, tu peux cliquer sur 'Créer Lettre' sous n'importe quelle offre.\n\n"
         "⚙️ <b>Commandes :</b>\n"
+        "/job : Lister les offres enregistrées\n"
         "/configurer_cv : Créer ou modifier ton profil\n"
         "/voir_cv : Afficher tes infos enregistrées\n"
         "/supprimer_cv : Effacer tes données"
     )
     await update.message.reply_text(msg, parse_mode=ParseMode.HTML)
 
+async def afficher_liste_jobs(update, context, offset=0, edit=False):
+    chat_id = update.effective_chat.id
+    limit = 5
+    offres = await lister_offres_permanentes_async(limit=limit, offset=offset)
+    total = await compter_offres_async()
+
+    if not offres:
+        msg_text = "📭 Aucune offre trouvée dans la base."
+        if edit:
+            await update.callback_query.edit_message_text(text=msg_text)
+        else:
+            await context.bot.send_message(chat_id=chat_id, text=msg_text)
+        return
+
+    msg = f"📋 <b>Offres d'emploi ({offset + 1} à {min(offset + limit, total)} sur {total})</b>\n\n"
+    
+    keyboard = []
+    for i, offre in enumerate(offres):
+        cache_key = await ajouter_offre_async(offre)
+        msg += f"{i+1}. <b>{html_module.escape(offre['titre'])}</b>\n"
+        msg += f"🏢 <i>{html_module.escape(offre['entreprise'])}</i>\n\n"
+        keyboard.append([InlineKeyboardButton(f"📄 Voir : {html_module.escape(offre['titre'][:30])}", callback_data=cache_key)])
+
+    nav_buttons = []
+    if offset > 0:
+        nav_buttons.append(InlineKeyboardButton("⬅️ Précédent", callback_data=f"jobspage_{max(0, offset - limit)}"))
+    if offset + limit < total:
+        nav_buttons.append(InlineKeyboardButton("Suivant ➡️", callback_data=f"jobspage_{offset + limit}"))
+        
+    if nav_buttons:
+        keyboard.append(nav_buttons)
+
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    if edit:
+        await update.callback_query.edit_message_text(
+            text=msg,
+            parse_mode=ParseMode.HTML,
+            reply_markup=reply_markup
+        )
+    else:
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=msg,
+            parse_mode=ParseMode.HTML,
+            reply_markup=reply_markup
+        )
+
+async def job_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Commande /job pour afficher la liste des offres."""
+    await afficher_liste_jobs(update, context, offset=0, edit=False)
+
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Gère tous les clics de boutons."""
     query = update.callback_query
     data = query.data
     await query.answer()
+
+    if data.startswith("jobspage_"):
+        offset = int(data.split("_")[1])
+        await afficher_liste_jobs(update, context, offset=offset, edit=True)
+        return
 
     if data.startswith("offre_"):
         # Afficher les détails complets
@@ -432,12 +493,24 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # --- INITIALISATION ---
 
+async def post_init(application: Application):
+    from telegram import BotCommand
+    commands = [
+        BotCommand("start", "Démarrer le bot"),
+        BotCommand("job", "Lister toutes les offres d'emploi"),
+        BotCommand("configurer_cv", "Configurer ton profil pour les lettres"),
+        BotCommand("voir_cv", "Voir ton profil actuel"),
+        BotCommand("search", "Rechercher des infos sur une entreprise"),
+        BotCommand("aide", "Afficher l'aide")
+    ]
+    await application.bot.set_my_commands(commands)
+
 def setup_application():
     """Configure l'application Telegram."""
     if not TELEGRAM_TOKEN:
         return None
         
-    app = Application.builder().token(TELEGRAM_TOKEN).build()
+    app = Application.builder().token(TELEGRAM_TOKEN).post_init(post_init).build()
     
     # Conversation Handler pour CV
     cv_handler = ConversationHandler(
@@ -461,6 +534,7 @@ def setup_application():
     )
     
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("job", job_cmd))
     app.add_handler(CommandHandler("aide", aide))
     app.add_handler(CommandHandler("voir_cv", voir_cv))
     app.add_handler(CommandHandler("search", search_company_cmd))
