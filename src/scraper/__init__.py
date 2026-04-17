@@ -1,4 +1,6 @@
-# Module de scraping PortalJob
-from .portal import surveiller_portal, extraire_offres_du_dom, extraire_details
+# Module de scraping
+from .portal import surveiller_portal, PortalScraper
+from .asako import surveiller_asako, AsakoScraper
+from .base import BaseScraper
 
-__all__ = ['surveiller_portal', 'extraire_offres_du_dom', 'extraire_details']
+__all__ = ['surveiller_portal', 'surveiller_asako', 'PortalScraper', 'AsakoScraper', 'BaseScraper']
