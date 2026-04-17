@@ -25,6 +25,20 @@ jobs:
       run: |
         playwright install chromium --with-deps
 
+    - name: Restore Browser Sessions
+      env:
+        PORTAL_SESSION_JSON: ${{ secrets.PORTAL_SESSION_JSON }}
+        ASAKO_SESSION_JSON: ${{ secrets.ASAKO_SESSION_JSON }}
+      run: |
+        if [ ! -z "$PORTAL_SESSION_JSON" ]; then
+          echo "$PORTAL_SESSION_JSON" > portal_session.json
+          echo "✅ PortalJob session restored."
+        fi
+        if [ ! -z "$ASAKO_SESSION_JSON" ]; then
+          echo "$ASAKO_SESSION_JSON" > asako_session.json
+          echo "✅ Asako session restored."
+        fi
+
     - name: Run Telegram Bot
       env:
         TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}

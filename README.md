@@ -135,6 +135,10 @@ python -m src.main all
    - Lettre personnalisée pour l'offre
    - Envoi en plusieurs messages si longue
 
+4. **Cliquer "🤖 Postuler via AI"** → Candidature automatisée
+   - Nécessite d'avoir exécuté `python login_portal.py` une fois pour enregistrer ta session.
+   - Le bot lance un navigateur en arrière-plan, va sur l'offre, génère une lettre et postule à ta place sur PortalJob.
+
 ## 🔧 Architecture
 
 ```

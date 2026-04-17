@@ -21,6 +21,7 @@ from ..llm.generator import creer_lettre_motivation, formater_lettre_pour_telegr
 from .bot import formater_details_complets
 from ..utils.logger import logger
 from ..utils.intel import CompanyIntel
+from ..automation.apply import postuler_offre_portal
 
 # États de la conversation pour la configuration du CV
 CHOOSING, TYPING_NAME, TYPING_EMAIL, TYPING_PHONE, TYPING_PORTFOLIO, TYPING_CV = range(6)
@@ -162,6 +163,49 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
              reply_markup=keyboard, 
              disable_web_page_preview=True
          )
+
+    elif data.startswith("apply_"):
+        # Auto-candidature avec IA
+        cache_key = data[6:]
+        offre = await recuperer_offre_async(cache_key)
+        
+        if not offre:
+            await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text="❌ Offre expirée dans le cache.")
+            return
+            
+        cv = await recuperer_cv_async()
+        if not cv:
+            await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text="⚠️ Tu n'as pas encore configuré ton CV. Utilise /configurer_cv.")
+            return
+            
+        url_offre = offre.get('url')
+        if not url_offre or "portaljob-madagascar.com" not in url_offre:
+            await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text="❌ L'auto-apply n'est actuellement supporté que sur PortalJob.")
+            return
+
+        status_msg = await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text="🤖 Génération de la lettre de motivation sur mesure...")
+        
+        # 1. Génération LM
+        success_lm, result_lm = await creer_lettre_motivation(offre)
+        if not success_lm:
+            await status_msg.edit_text(f"❌ Erreur lors de la génération de la lettre :\n{result_lm}")
+            return
+            
+        # Optional: Sending LM as proof
+        parties = formater_lettre_pour_telegram(result_lm)
+        for p in parties:
+            await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=p)
+            
+        await status_msg.edit_text("⏳ Lancement du navigateur pour soumettre la candidature...")
+        
+        # 2. Lancement Playwright en background (ça peut prendre 5-15 secondes)
+        success_apply, msg_apply = await postuler_offre_portal(url_offre, result_lm)
+        
+        if success_apply:
+            await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"✅ <b>SUCCÈS :</b>\n{msg_apply}", parse_mode=ParseMode.HTML)
+        else:
+            await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"❌ <b>ÉCHEC DE L'AUTOMATISATION :</b>\n{msg_apply}", parse_mode=ParseMode.HTML)
+
 
 # --- CONFIGURATION CV (CONVERSATION) ---
 

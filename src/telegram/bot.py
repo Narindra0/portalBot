@@ -91,8 +91,10 @@ async def envoyer_offre_async(bot, offre_data):
         # Construction dynamique du clavier
         boutons_principaux = [
             InlineKeyboardButton("📄 Voir plus", callback_data=cache_key),
-            InlineKeyboardButton("🔗 Postuler", url=offre_data.get('url', ''))
+            InlineKeyboardButton("🔗 Lien Original", url=offre_data.get('url', ''))
         ]
+        
+        bouton_ia = [InlineKeyboardButton("🤖 Postuler via AI", callback_data=f"apply_{cache_key}")]
         
         boutons_intel = []
         if offre_data.get('linkedin_url'):
@@ -100,7 +102,7 @@ async def envoyer_offre_async(bot, offre_data):
         if offre_data.get('facebook_url'):
             boutons_intel.append(InlineKeyboardButton("🟦 Facebook", url=offre_data['facebook_url']))
         
-        layout = [boutons_principaux]
+        layout = [boutons_principaux, bouton_ia]
         if boutons_intel:
             layout.append(boutons_intel)
             
