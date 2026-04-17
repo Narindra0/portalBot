@@ -29,6 +29,13 @@ FIRECRAWL_API_KEY = os.getenv('FIRECRAWL_API_KEY')
 TURSO_DATABASE_URL = os.getenv('TURSO_DATABASE_URL')
 TURSO_AUTH_TOKEN = os.getenv('TURSO_AUTH_TOKEN')
 
+# === SMTP Email Fallback ===
+SMTP_EMAIL = os.getenv('SMTP_EMAIL')
+SMTP_PASSWORD = os.getenv('SMTP_PASSWORD')  # Mot de passe d'application Gmail
+
+# === CV PDF (stockage local temporaire) ===
+CV_PDF_PATH = os.path.join(BASE_DIR, 'cv_utilisateur.pdf')
+
 
 def verifier_configuration():
     """Vérifie que les variables essentielles sont configurées."""

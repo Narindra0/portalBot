@@ -46,5 +46,7 @@ jobs:
         HF_API_KEY: ${{ secrets.HF_API_KEY }}
         TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
         TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+        SMTP_EMAIL: ${{ secrets.SMTP_EMAIL }}
+        SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
         HEADLESS: true
       run: python -m src.main bot

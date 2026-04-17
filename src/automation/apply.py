@@ -104,11 +104,30 @@ async def postuler_offre_portal(url_offre, lettre_motivation):
                 elif context: await context.close()
                 return False, "Formulaire de candidature trouvé mais impossible de localiser le bouton de validation finale."
 
-            # 5. Vérifier la réussite (Message de confirmation)
-            logger.info("✅ Candidature envoyée !")
+            # 5. Vérifier la réussite en cherchant un message de confirmation dans la page
+            logger.info("Vérification du message de confirmation...")
+            page_content = await page.content()
+            page_text = await page.inner_text('body')
+            
+            mots_cles_succes = [
+                "candidature envoy", "votre candidature", "merci pour votre",
+                "votre dossier", "bien été envoy", "bien reçu",
+                "successfully", "sent successfully", "application submitted"
+            ]
+            
+            confirmation_trouvee = any(
+                mot.lower() in page_text.lower() for mot in mots_cles_succes
+            )
+            
             if browser: await browser.close()
             elif context: await context.close()
-            return True, "Candidature envoyée avec succès !"
+            
+            if confirmation_trouvee:
+                logger.info("✅ Candidature confirmée par la page !")
+                return True, "Candidature envoyée avec succès ! La plateforme a confirmé la réception."
+            else:
+                logger.warning("⚠️ Bouton cliqué mais aucun message de confirmation trouvé.")
+                return False, "Le bouton a été cliqué mais la plateforme n'a pas affiché de confirmation. La candidature n'a peut-être pas été envoyée."
             
         except Exception as e:
             if browser: await browser.close()

@@ -11,7 +11,7 @@ from telegram.ext import (
 )
 from telegram.constants import ParseMode
 
-from ..config import TELEGRAM_TOKEN, TELEGRAM_CHAT_ID
+from ..config import TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, CV_PDF_PATH
 from ..storage.cache_db import (
     recuperer_offre_async, sauvegarder_cv_async, 
     recuperer_cv_async, vider_cache
@@ -22,6 +22,8 @@ from .bot import formater_details_complets
 from ..utils.logger import logger
 from ..utils.intel import CompanyIntel
 from ..automation.apply import postuler_offre_portal
+from ..automation.mailer import envoyer_candidature_email, extraire_email_depuis_texte
+import html as html_module
 
 # États de la conversation pour la configuration du CV
 CHOOSING, TYPING_NAME, TYPING_EMAIL, TYPING_PHONE, TYPING_PORTFOLIO, TYPING_CV = range(6)
@@ -203,10 +205,52 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         success_apply, msg_apply = await postuler_offre_portal(url_offre, result_lm)
         
         if success_apply:
-            await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"✅ <b>SUCCÈS :</b>\n{msg_apply}", parse_mode=ParseMode.HTML)
+            await context.bot.send_message(
+                chat_id=TELEGRAM_CHAT_ID,
+                text=f"✅ <b>SUCCÈS :</b>\n{msg_apply}",
+                parse_mode=ParseMode.HTML
+            )
         else:
-            import html
-            await context.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"❌ <b>ÉCHEC DE L'AUTOMATISATION :</b>\n{html.escape(str(msg_apply))}", parse_mode=ParseMode.HTML)
+            # Playwright a échoué — Tentative de fallback par email
+            details_offre = offre.get('details', '')
+            email_recruteur = extraire_email_depuis_texte(details_offre)
+            
+            raison_echec = html_module.escape(str(msg_apply))
+            
+            if email_recruteur:
+                await context.bot.send_message(
+                    chat_id=TELEGRAM_CHAT_ID,
+                    text=f"⚠️ <b>Plateforme inaccessible.</b>\nEmail détecté : <code>{email_recruteur}</code>\n⏳ Envoi direct en cours...",
+                    parse_mode=ParseMode.HTML
+                )
+                # Utiliser le PDF s’il existe, sinon None
+                import os
+                pdf_path = CV_PDF_PATH if os.path.exists(CV_PDF_PATH) else None
+                success_mail, msg_mail = await envoyer_candidature_email(
+                    destinataire=email_recruteur,
+                    offre_titre=offre.get('titre', 'Poste'),
+                    offre_entreprise=offre.get('entreprise', 'Entreprise'),
+                    lettre_motivation=result_lm,
+                    cv_pdf_path=pdf_path
+                )
+                if success_mail:
+                    await context.bot.send_message(
+                        chat_id=TELEGRAM_CHAT_ID,
+                        text=f"✅ <b>Email envoyé !</b>\n{html_module.escape(msg_mail)}",
+                        parse_mode=ParseMode.HTML
+                    )
+                else:
+                    await context.bot.send_message(
+                        chat_id=TELEGRAM_CHAT_ID,
+                        text=f"❌ <b>Échec de l'email :</b>\n{html_module.escape(msg_mail)}\n\n<i>Raison Playwright : {raison_echec}</i>",
+                        parse_mode=ParseMode.HTML
+                    )
+            else:
+                await context.bot.send_message(
+                    chat_id=TELEGRAM_CHAT_ID,
+                    text=f"❌ <b>ÉCHEC (aucun email de secours trouvé) :</b>\n{raison_echec}",
+                    parse_mode=ParseMode.HTML
+                )
 
 
 # --- CONFIGURATION CV (CONVERSATION) ---
@@ -343,8 +387,11 @@ async def config_cv_file_portfolio(update: Update, context: ContextTypes.DEFAULT
     portfolio = "" if update.message.text.lower() == "skip" else update.message.text
     status_msg = await update.message.reply_text("🔍 <b>Extraction en cours...</b>", parse_mode=ParseMode.HTML)
     
-    # Extraction (peut être longue)
-    success, result = await traiter_fichier_cv(context.user_data['file_id'], TELEGRAM_TOKEN, context.user_data['mime_type'])
+    file_id = context.user_data['file_id']
+    mime_type = context.user_data['mime_type']
+    
+    # Extraction du texte
+    success, result = await traiter_fichier_cv(file_id, TELEGRAM_TOKEN, mime_type)
     
     await status_msg.delete()
     
@@ -356,7 +403,24 @@ async def config_cv_file_portfolio(update: Update, context: ContextTypes.DEFAULT
             portfolio,
             result
         )
-        await update.message.reply_text(f"✅ <b>CV enregistré !</b>\nExtrait : <code>{result[:100]}...</code>", parse_mode=ParseMode.HTML)
+        
+        # Sauvegarde du PDF brut sur disque pour les emails de fallback
+        if 'pdf' in mime_type.lower():
+            try:
+                bot_file = await update.get_bot().get_file(file_id)
+                import aiohttp
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(bot_file.file_path) as resp:
+                        pdf_bytes = await resp.read()
+                import os
+                with open(CV_PDF_PATH, 'wb') as f:
+                    f.write(pdf_bytes)
+                await update.message.reply_text(f"✅ <b>CV enregistré + PDF sauvegardé !</b>\nExtrait : <code>{result[:100]}...</code>", parse_mode=ParseMode.HTML)
+            except Exception as e:
+                logger.warning(f"PDF non sauvegardé sur disque : {e}")
+                await update.message.reply_text(f"✅ <b>CV enregistré !</b>\nExtrait : <code>{result[:100]}...</code>", parse_mode=ParseMode.HTML)
+        else:
+            await update.message.reply_text(f"✅ <b>CV enregistré !</b>\nExtrait : <code>{result[:100]}...</code>", parse_mode=ParseMode.HTML)
     else:
         await update.message.reply_text(f"❌ Erreur extraction : {result}")
         
