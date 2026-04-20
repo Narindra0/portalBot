@@ -7,7 +7,7 @@ import httpx
 from bs4 import BeautifulSoup
 from datetime import datetime
 from .base import BaseScraper
-from .portal import est_une_offre_dev, nettoyer_titre, convertir_date_relative
+from .portal import est_une_offre_it, nettoyer_titre, convertir_date_relative
 from ..utils.logger import logger
 from ..utils.intel import enrichir_offre_intel
 from ..telegram.bot import envoyer_offre_async
@@ -39,7 +39,7 @@ class AsakoScraper(BaseScraper):
                     if not h2: continue
                     titre = nettoyer_titre(h2.get_text().strip())
                     
-                    if not est_une_offre_dev(titre): continue
+                    if not est_une_offre_it(titre): continue
                     
                     link_el = item.find('a')
                     if not link_el: continue

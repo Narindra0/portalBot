@@ -13,16 +13,42 @@ from ..utils.intel import enrichir_offre_intel
 from ..telegram.bot import envoyer_offre_async
 
 # Utils (gardés pour compatibilité / simplicité)
-MOTS_CLES_DEV = [
+MOTS_CLES_IT = [
+    # Développement
     "développeur", "developpeur", "developer", "fullstack", "full-stack",
-    "backend", "frontend", "front-end", "back-end", "net", "python",
-    "php", "java", "javascript", "angular", "react", "odoo", "logiciel", "web", "software", "dev"
+    "backend", "frontend", "front-end", "back-end", "python", "php", "java", 
+    "javascript", "angular", "react", "odoo", "logiciel", "web", "software", "dev", ".net",
+    
+    # Infrastructure et Réseaux
+    "administrateur", "réseau", "système", "network", "it", "infrastructure", 
+    "technicien", "support", "sécurité", "cyber", "cloud", "devops",
+    
+    # Management et Produit
+    "product", "manager", "chef", "projet", "project", "agile", "scrum", 
+    "analyste", "consultant", "data", "scénariste", "rédacteur",
+    
+    # Design
+    "ux", "ui", "design", "graphiste", "infographiste"
 ]
 
-def est_une_offre_dev(titre):
+def est_une_offre_it(titre):
     if not titre: return False
+    import re
     t = titre.lower()
-    return any(mot in t for mot in MOTS_CLES_DEV)
+    
+    # Mots-clés qui nécessitent une correspondance exacte (mot entier)
+    # pour éviter des faux positifs comme 'ui' dans 'cuisinier'
+    MOTS_ENTIERS = ["it", "ui", "ux", "dev"]
+    
+    for mot in MOTS_CLES_IT:
+        if mot in MOTS_ENTIERS:
+            # Vérifie si le mot est entouré de limites de mots (\b)
+            if re.search(rf"\b{re.escape(mot)}\b", t):
+                return True
+        elif mot in t:
+            return True
+            
+    return False
 
 def nettoyer_titre(titre):
     if not titre: return ""
@@ -106,7 +132,7 @@ class PortalScraper(BaseScraper):
                 h3 = article.locator('h3').first
                 titre_brut = (await h3.inner_text()).strip()
                 titre = nettoyer_titre(titre_brut)
-                if not est_une_offre_dev(titre): continue
+                if not est_une_offre_it(titre): continue
                 
                 lien_principal = article.locator('a').first
                 href = await lien_principal.get_attribute('href')
