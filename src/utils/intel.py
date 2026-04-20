@@ -9,7 +9,7 @@ from bs4 import BeautifulSoup
 from playwright.async_api import async_playwright
 from tenacity import retry, stop_after_attempt, wait_exponential
 from ..utils.logger import logger
-from ..llm.huggingface_api import generer_resume_entreprise_async
+from ..llm.gemini_api import generer_resume_entreprise_gemini_async as generer_resume_entreprise_async
 
 class CompanyIntel:
     @staticmethod

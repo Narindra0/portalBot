@@ -2,15 +2,12 @@
 Module de connexion à l'API Hugging Face pour génération de lettres de motivation.
 Support Async avec gestion d'erreurs, retry exponentiel et compatibilité URL globale.
 """
-import httpx
-import asyncio
-import json
-import re
+from huggingface_hub import InferenceClient
 from ..config import HF_API_KEY
 from ..utils.logger import logger
 
-# Modèle recommandé (Extrêmement puissant et supporté par le Router)
-HF_MODEL = "deepseek-ai/DeepSeek-R1"
+# Modèle 100% Gratuit (Serverless Inference API)
+HF_MODEL = "Qwen/Qwen2.5-7B-Instruct"
 
 def nettoyer_reponse_ai(text):
     """
@@ -35,150 +32,69 @@ def nettoyer_reponse_ai(text):
     return text
 
 async def generer_lettre_motivation_async(cv_text, offre_titre, offre_entreprise, offre_details, portfolio=""):
-    """Génère une lettre de motivation via l'API Hugging Face (Chat Completion)."""
+    """Génère une lettre de motivation via l'API Hugging Face Free Serverless."""
     if not HF_API_KEY:
-        logger.error("HF_API_KEY manquante dans la configuration.")
+        logger.error("HF_API_KEY manquante.")
         return None
 
-    # Point d'entrée pour la compatibilité OpenAI sur l'Inference API
-    api_url = "https://router.huggingface.co/v1/chat/completions"
-    
-    headers = {
-        "Authorization": f"Bearer {HF_API_KEY}",
-        "Content-Type": "application/json"
-    }
-    
-    context_portfolio = f"Voici mon portfolio pour appuyer ma candidature : {portfolio}" if portfolio else ""
+    try:
+        # Initialisation du client (plus robuste qu'une URL manuelle)
+        client = InferenceClient(api_key=HF_API_KEY)
+        
+        context_portfolio = f"Voici mon portfolio pour appuyer ma candidature : {portfolio}" if portfolio else ""
+        
+        prompt = (
+            f"Tu es un expert en recrutement. Rédige une lettre de motivation.\n"
+            f"Poste: {offre_titre}\nEntreprise: {offre_entreprise}\n"
+            f"Détails offre: {offre_details}\nMon CV: {cv_text}\n"
+            f"{context_portfolio}\n"
+            f"Règles: Texte brut, sans markdown, ton pro et humain. Pas d'en-tête (adresse/date)."
+        )
 
-    messages = [
-        {
-            "role": "system",
-            "content": (
-                "Tu es un expert en recrutement et en personal branding, spécialisé dans le marché malgache "
-                "et les entreprises tech. Tu rédiges des lettres de motivation authentiques, percutantes et "
-                "mémorables — pas des lettres génériques.\n\n"
-                "Ton objectif : écrire une lettre qui sonne comme un vrai humain déterminé, pas comme un "
-                "modèle téléchargé sur internet.\n\n"
-                "RÈGLES ABSOLUES :\n"
-                "1. Texte brut uniquement. Aucun markdown (pas de **, pas de ##, pas de ---, pas de tirets).\n"
-                "2. Aucune réflexion interne, aucune note, aucun commentaire hors lettre.\n"
-                "3. Répondre UNIQUEMENT avec le texte final de la lettre, rien d'autre.\n"
-                "4. Longueur : 320 à 400 mots maximum. Concis = respectueux du temps du recruteur.\n"
-                "5. Ne jamais inventer des expériences absentes du CV."
-            )
-        },
-        {
-            "role": "user",
-            "content": (
-                f"Rédige une lettre de motivation unique et authentique pour ce poste.\n\n"
-                f"POSTE : {offre_titre}\n"
-                f"ENTREPRISE : {offre_entreprise}\n"
-                f"OFFRE : {offre_details}\n\n"
-                f"MON CV :\n{cv_text}\n\n"
-                f"{context_portfolio}\n\n"
-                f"MISSION :\n"
-                f"Analyse d'abord le CV et l'offre, puis identifie :\n"
-                f"- L'expérience ou projet du candidat qui résonne le plus avec ce poste\n"
-                f"- La valeur concrète qu'il peut apporter à cette entreprise spécifique\n"
-                f"- Un angle d'accroche fort et personnel (pas 'je me permets de postuler')\n\n"
-                f"STRUCTURE À RESPECTER :\n"
-                f"- Objet : sobre et précis (ex: Candidature au poste de {offre_titre})\n"
-                f"- Corps : 3 paragraphes\n"
-                f"    Paragraphe 1 — Accroche forte : pourquoi CE poste dans CETTE entreprise (1 fait concret)\n"
-                f"    Paragraphe 2 — Valeur ajoutée : 1 ou 2 expériences clés du CV liées aux besoins de l'offre\n"
-                f"    Paragraphe 3 — Projection : ce que tu vas apporter concrètement, appel à l'entretien\n"
-                f"- Formule de politesse sobre\n"
-                f"- Signature (prénom et nom seulement, sans adresse ni contacts)\n\n"
-                f"RÈGLE CRITIQUE : NE PAS inclure d'en-tête type courrier (nom/adresse/email/téléphone du candidat, "
-                f"adresse de l'entreprise, date, ville). La lettre sera collée directement dans un formulaire en ligne.\n\n"
-                f"TON : Déterminé, sobre, humain. Ni arrogant, ni trop modeste.\n"
-                f"Langue : Français impeccable."
-            )
-        }
-    ]
-
-    payload = {
-        "model": HF_MODEL,
-        "messages": messages,
-        "max_tokens": 1400,
-        "temperature": 0.65
-    }
-
-    # Tentatives multiples (Retry) pour gérer le temps de chargement du modèle
-    max_retries = 5
-    for attempt in range(max_retries):
-        try:
-            logger.info(f"🤖 Tentative {attempt + 1}/{max_retries} : Génération avec {HF_MODEL}...")
+        # Utilisation du Chat Completion via le client (gère les URLs automatiquement)
+        response = client.chat.completions.create(
+            model=HF_MODEL,
+            messages=[
+                {"role": "system", "content": "Tu es un expert en recrutement rédigeant des lettres de motivation percutantes."},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=1024,
+            temperature=0.7
+        )
+        
+        raw_text = response.choices[0].message.content
+        clean_text = nettoyer_reponse_ai(raw_text)
+        logger.info("✅ Lettre générée (InferenceClient) avec succès.")
+        return clean_text
             
-            async with httpx.AsyncClient(timeout=120.0) as client:
-                resp = await client.post(api_url, headers=headers, json=payload)
-                
-                # Succès
-                if resp.status_code == 200:
-                    result = resp.json()
-                    raw_text = result['choices'][0]['message']['content']
-                    
-                    # NETTOYAGE ROBUSTE
-                    clean_text = nettoyer_reponse_ai(raw_text)
-                    
-                    # S'assurer qu'il n'y a pas de texte d'introduction inutile
-                    if "Voici la lettre" in clean_text[:50]:
-                        clean_text = clean_text.split('\n', 1)[-1].strip()
-
-                    logger.info("✅ Lettre générée et nettoyée avec succès.")
-                    return clean_text
-                
-                # Modèle en cours de chargement sur les serveurs HF
-                elif resp.status_code == 503:
-                    wait_time = (2 ** attempt)
-                    logger.warning(f"Modèle {HF_MODEL} en chargement... Attente {wait_time}s")
-                    await asyncio.sleep(wait_time)
-                    continue
-                else:
-                    logger.error(f"Erreur API HF: {resp.status_code} - {resp.text}")
-                    break 
-                    
-        except Exception as e:
-            logger.error(f"Exception (Tentative {attempt + 1}): {e}")
-            await asyncio.sleep(2 ** attempt)
+    except Exception as e:
+        logger.error(f"Erreur InferenceClient: {e}")
     
     return None
 
 async def generer_resume_entreprise_async(nom_entreprise, contexte=""):
-    """Génère un résumé court et percutant d'une entreprise."""
+    """Génère un résumé court et percutant d'une entreprise (Free)."""
     if not HF_API_KEY: return None
 
-    api_url = "https://router.huggingface.co/v1/chat/completions"
-    headers = {"Authorization": f"Bearer {HF_API_KEY}", "Content-Type": "application/json"}
-    
-    prompt = (
-        f"Tu es un expert du marché de l'emploi à Madagascar. Résume en une phrase ou deux "
-        f"l'activité principale de l'entreprise '{nom_entreprise}'.\n\n"
-    )
-    if contexte:
-        prompt += f"Utilise ce contexte pour être précis : {contexte}\n\n"
-    
-    prompt += "RÈGLES : Pas de gras, pas d'introduction, juste le résumé direct. Sois professionnel et efficace."
-
-    payload = {
-        "model": HF_MODEL,
-        "messages": [
-            {"role": "system", "content": "Tu rédiges des résumés d'entreprises courts et précis."},
-            {"role": "user", "content": prompt}
-        ],
-        "max_tokens": 150,
-        "temperature": 0.4
-    }
-
     try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            resp = await client.post(api_url, headers=headers, json=payload)
-            if resp.status_code == 200:
-                result = resp.json()
-                raw_text = result['choices'][0]['message']['content']
-                return nettoyer_reponse_ai(raw_text)
+        client = InferenceClient(api_key=HF_API_KEY)
+        
+        prompt = (
+            f"Résume en une phrase l'activité de l'entreprise '{nom_entreprise}'.\n"
+            f"Contexte: {contexte}\n"
+            f"RÈGLE: Une seule phrase, directe, sans introduction."
+        )
+
+        response = client.chat.completions.create(
+            model=HF_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=100,
+            temperature=0.4
+        )
+        
+        return nettoyer_reponse_ai(response.choices[0].message.content)
     except Exception as e:
-        logger.error(f"Erreur génération résumé: {e}")
+        logger.error(f"Erreur résumé: {e}")
     return None
 
 def generer_lettre_motivation(cv, t, e, d):

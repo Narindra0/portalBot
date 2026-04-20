@@ -16,8 +16,11 @@ load_dotenv(env_path)
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 
-# === Hugging Face ===
+# === Hugging Face (Déprécié) ===
 HF_API_KEY = os.getenv('HF_API_KEY')
+
+# === Google Gemini (Recommandé) ===
+GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 
 # === Mode d'exécution ===
 HEADLESS = os.getenv('HEADLESS', 'false').lower() == 'true'
@@ -45,8 +48,8 @@ def verifier_configuration():
         erreurs.append("TELEGRAM_TOKEN manquant")
     if not TELEGRAM_CHAT_ID or TELEGRAM_CHAT_ID == 'votre_chat_id_ici':
         erreurs.append("TELEGRAM_CHAT_ID non configuré")
-    if not HF_API_KEY or HF_API_KEY == 'votre_cle_hf_ici':
-        erreurs.append("HF_API_KEY manquante (nécessaire pour les lettres de motivation)")
+    if not GEMINI_API_KEY:
+        erreurs.append("GEMINI_API_KEY manquante (nécessaire pour les lettres de motivation et les résumés)")
     
     return erreurs
 

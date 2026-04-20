@@ -3,7 +3,7 @@ Module de génération de lettres de motivation.
 Adapté pour l'asynchronisme.
 """
 from ..storage.cache_db import recuperer_cv_async
-from .huggingface_api import generer_lettre_motivation_async
+from .gemini_api import generer_lettre_motivation_gemini_async as generer_lettre_motivation_async
 from ..utils.logger import logger
 
 async def creer_lettre_motivation(offre_data):
