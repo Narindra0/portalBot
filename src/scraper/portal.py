@@ -60,16 +60,29 @@ def nettoyer_titre(titre):
 def convertir_date_relative(date_texte):
     date_texte = date_texte.strip().lower()
     aujourdhui = datetime.now()
-    if date_texte == "aujourd'hui": return aujourdhui.strftime("%d/%m/%Y")
-    elif date_texte == "hier": return (aujourdhui - timedelta(days=1)).strftime("%d/%m/%Y")
+    if "aujourd'hui" in date_texte: return aujourdhui.strftime("%d/%m/%Y")
+    elif "hier" in date_texte: return (aujourdhui - timedelta(days=1)).strftime("%d/%m/%Y")
+    
+    # Gestion de "Il y a X jours" (Asako)
+    match = re.search(r"il y a (\d+) jours?", date_texte)
+    if match:
+        nb_jours = int(match.group(1))
+        return (aujourdhui - timedelta(days=nb_jours)).strftime("%d/%m/%Y")
+        
     return date_texte
 
-def est_date_recente(date_str, max_jours=2):
+def est_date_recente(date_str, max_jours=4):
     try:
         aujourdhui = datetime.now().date()
-        d = datetime.strptime(date_str, "%d/%m/%Y").date()
+        # Gérer le format YYYY-MM-DD ou DD/MM/YYYY
+        if '-' in date_str:
+            d = datetime.strptime(date_str.split()[0], "%Y-%m-%d").date()
+        else:
+            d = datetime.strptime(date_str, "%d/%m/%Y").date()
+            
         difference = (aujourdhui - d).days
-        return 0 <= difference < max_jours
+        # On accepte jusqu'à max_jours d'ancienneté (inclus)
+        return 0 <= difference <= max_jours
     except: return False
 
 class PortalScraper(BaseScraper):
@@ -95,7 +108,8 @@ class PortalScraper(BaseScraper):
                 offres_dom = await self._extraire_liste(page)
                 
                 for offre in offres_dom:
-                    if not est_date_recente(offre['date'], max_jours=2):
+                    if not est_date_recente(offre['date'], max_jours=4):
+                        logger.debug(f"⏳ Offre ignorée (trop ancienne): {offre['titre']} du {offre['date']}")
                         continue
                     
                     # Traitement de base (doublons)
@@ -141,13 +155,23 @@ class PortalScraper(BaseScraper):
                 entreprise_el = article.locator('p.font-semibold').first
                 entreprise = (await entreprise_el.inner_text()).strip() if await entreprise_el.count() > 0 else "Non spécifiée"
                 
-                spans = await article.locator('a span').all()
-                date_texte = (await spans[3].inner_text()).strip() if len(spans) >= 4 else "Inconnue"
+                # Extraction de la date plus robuste
+                date_texte = "Inconnue"
+                all_spans = await article.locator('span').all()
+                for span in all_spans:
+                    txt = (await span.inner_text()).strip().lower()
+                    # Chercher format date DD/MM/YYYY ou mots-clés relatifs
+                    if re.search(r'\d{1,2}/\d{1,2}/\d{4}', txt) or "aujourd'hui" in txt or "hier" in txt:
+                        date_texte = txt
+                        break
+                
                 date_pub = convertir_date_relative(date_texte)
                 
                 url_offre = f"https://www.portaljob-madagascar.com{href}" if href.startswith('/') else href
                 offres.append({'titre': titre, 'entreprise': entreprise, 'url': url_offre, 'date': date_pub})
-            except: continue
+            except Exception as e:
+                logger.debug(f"⚠️ Erreur extraction article: {e}")
+                continue
         return offres
 
     async def _extraire_details(self, page, url):

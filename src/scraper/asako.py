@@ -7,7 +7,7 @@ import httpx
 from bs4 import BeautifulSoup
 from datetime import datetime
 from .base import BaseScraper
-from .portal import est_une_offre_it, nettoyer_titre, convertir_date_relative
+from .portal import est_une_offre_it, nettoyer_titre, convertir_date_relative, est_date_recente
 from ..utils.logger import logger
 from ..utils.intel import enrichir_offre_intel
 from ..telegram.bot import envoyer_offre_async
@@ -16,7 +16,7 @@ class AsakoScraper(BaseScraper):
     def __init__(self, telegram_bot=None):
         super().__init__("Asako", telegram_bot)
         self.url_base = "https://www.asako.mg"
-        self.url_list = f"{self.url_base}/emploi/m-developpeur"
+        self.url_list = f"{self.url_base}/emploi" # URL plus générale pour capturer tout l'IT
         self.headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         }
@@ -30,19 +30,21 @@ class AsakoScraper(BaseScraper):
                     return
 
                 soup = BeautifulSoup(response.text, 'html.parser')
-                items = soup.select('.box-annonce')
+                # Chaque annonce commence par un h3 avec un lien
+                items = soup.select('h3')
                 
                 logger.info(f"📊 Asako: {len(items)} offres potentielles.")
 
-                for item in items:
-                    h2 = item.find('h2')
-                    if not h2: continue
-                    titre = nettoyer_titre(h2.get_text().strip())
+                for h3 in items:
+                    link_el = h3.find('a')
+                    if not link_el or '/annonces/' not in link_el.get('href', ''):
+                        continue
+                        
+                    titre = nettoyer_titre(link_el.get_text().strip())
                     
-                    if not est_une_offre_it(titre): continue
+                    if not est_une_offre_it(titre):
+                        continue
                     
-                    link_el = item.find('a')
-                    if not link_el: continue
                     href = link_el.get('href')
                     url_offre = f"{self.url_base}{href}" if href.startswith('/') else href
                     
@@ -50,13 +52,19 @@ class AsakoScraper(BaseScraper):
                     if not await self.traiter_offre({'url': url_offre, 'titre': titre, 'entreprise': ''}):
                         continue
 
-                    # Extraire infos restantes
-                    ent_el = item.select_one('.entreprise')
-                    entreprise = ent_el.get_text().strip() if ent_el else "Non spécifiée"
+                    # Extraire infos restantes (souvent dans l'élément p/div suivant)
+                    meta_el = h3.find_next(['p', 'div', 'span'])
+                    meta_text = meta_el.get_text().strip() if meta_el else "aujourd'hui"
                     
-                    date_el = item.select_one('.date')
-                    date_text = date_el.get_text().strip() if date_el else "aujourd'hui"
+                    # Format type: "Il y a 4 jours | CDI - Secteur"
+                    parts = [p.strip() for p in meta_text.split('|')]
+                    date_text = parts[0] if parts else "aujourd'hui"
                     date_pub = convertir_date_relative(date_text)
+                    
+                    if not est_date_recente(date_pub, max_jours=4):
+                        continue
+                        
+                    entreprise = "Non spécifiée"
                     
                     logger.info(f"🎯 [Asako] Nouvelle offre: {titre[:50]}")
                     details = await self._extraire_details(client, url_offre)
