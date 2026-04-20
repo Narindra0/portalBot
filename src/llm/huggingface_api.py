@@ -12,6 +12,28 @@ from ..utils.logger import logger
 # Modèle recommandé (Extrêmement puissant et supporté par le Router)
 HF_MODEL = "deepseek-ai/DeepSeek-R1"
 
+def nettoyer_reponse_ai(text):
+    """
+    Nettoie les réponses de l'IA pour Telegram (HTML).
+    Supprime les blocs <think> (pensées de DeepSeek) et les tags non supportés.
+    """
+    if not text: return ""
+    
+    # 1. Supprimer les blocs <think> complets (Insensible à la casse)
+    text = re.sub(r'<(think)>.*?</\1>', '', text, flags=re.DOTALL | re.IGNORECASE)
+    
+    # 2. Supprimer un début de <think> orphelin (si réponse tronquée)
+    text = re.sub(r'<(think)>.*$', '', text, flags=re.DOTALL | re.IGNORECASE)
+    
+    # 3. Supprimer tout tag HTML non supporté par Telegram (b, i, a, code, pre)
+    # On capture tout ce qui n'est pas dans la liste blanche
+    text = re.sub(r'<(?!/?(b|i|a|code|pre)\b)[^>]+>', '', text, flags=re.IGNORECASE)
+    
+    # 4. Nettoyage résiduel
+    text = text.replace('**', '').replace('---', '').strip()
+    
+    return text
+
 async def generer_lettre_motivation_async(cv_text, offre_titre, offre_entreprise, offre_details, portfolio=""):
     """Génère une lettre de motivation via l'API Hugging Face (Chat Completion)."""
     if not HF_API_KEY:
@@ -96,13 +118,10 @@ async def generer_lettre_motivation_async(cv_text, offre_titre, offre_entreprise
                     result = resp.json()
                     raw_text = result['choices'][0]['message']['content']
                     
-                    # NETTOYAGE CRITIQUE : Supprimer les blocs <think>...</think>
-                    clean_text = re.sub(r'<think>.*?</think>', '', raw_text, flags=re.DOTALL).strip()
+                    # NETTOYAGE ROBUSTE
+                    clean_text = nettoyer_reponse_ai(raw_text)
                     
-                    # Supprimer les restes de gras markdown ou séparateurs si l'IA en a mis malgré les consignes
-                    clean_text = clean_text.replace('**', '').replace('---', '')
-                    
-                    # S'assurer qu'il n'y a pas de texte d'introduction/conclusion inutile
+                    # S'assurer qu'il n'y a pas de texte d'introduction inutile
                     if "Voici la lettre" in clean_text[:50]:
                         clean_text = clean_text.split('\n', 1)[-1].strip()
 
@@ -157,8 +176,7 @@ async def generer_resume_entreprise_async(nom_entreprise, contexte=""):
             if resp.status_code == 200:
                 result = resp.json()
                 raw_text = result['choices'][0]['message']['content']
-                clean_text = re.sub(r'<think>.*?</think>', '', raw_text, flags=re.DOTALL).strip()
-                return clean_text
+                return nettoyer_reponse_ai(raw_text)
     except Exception as e:
         logger.error(f"Erreur génération résumé: {e}")
     return None
