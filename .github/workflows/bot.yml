@@ -39,15 +39,19 @@ jobs:
           echo "✅ Asako session restored."
         fi
 
-    - name: Run Telegram Bot
+    - name: Run Telegram Bot (Once)
+      timeout-minutes: 10
       env:
         TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         HF_API_KEY: ${{ secrets.HF_API_KEY }}
         GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
         TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
         SMTP_EMAIL: ${{ secrets.SMTP_EMAIL }}
         SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
         HEADLESS: true
-      run: python -m src.main bot
+      run: |
+        echo "🚀 Lancement du bot en mode ponctuel..."
+        python -m src.main bot-once || echo "⚠️ Bot terminé avec erreur, vérifiez les logs"

@@ -159,6 +159,19 @@ async def init_db_async():
                 except: pass
 
             await db.execute('CREATE INDEX IF NOT EXISTS idx_offres_date ON offres_permanentes(date_enregistrement DESC)')
+
+            # Table profil matching (extrait du CV)
+            await db.execute('''
+                CREATE TABLE IF NOT EXISTS profil_matching (
+                    id INTEGER PRIMARY KEY CHECK (id = 1),
+                    competences TEXT,       -- JSON array
+                    annees_exp INTEGER,     -- 5
+                    postes TEXT,           -- JSON array
+                    niveau_etudes TEXT,    -- "Bac+5"
+                    extrait_important TEXT, -- résumé du CV
+                    date_extraction TEXT
+                )
+            ''')
             await db.commit()
 
 async def ajouter_offre_async(offre_data):
@@ -241,12 +254,55 @@ async def recuperer_cv_async():
             row = await cursor.fetchone()
     if not row: return None
     return {
-        'nom': row[0], 
-        'email': row[1], 
-        'telephone': row[2], 
-        'portfolio': row[3], 
-        'cv_text': row[4], 
+        'nom': row[0],
+        'email': row[1],
+        'telephone': row[2],
+        'portfolio': row[3],
+        'cv_text': row[4],
         'date_mise_a_jour': row[5]
+    }
+
+async def sauvegarder_profil_matching_async(profil_data):
+    """Sauvegarde le profil extrait du CV pour matching."""
+    import json
+    async with _db_lock:
+        async with get_async_conn() as db:
+            date_now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            await db.execute('''
+                INSERT OR REPLACE INTO profil_matching
+                (id, competences, annees_exp, postes, niveau_etudes, extrait_important, date_extraction)
+                VALUES (1, ?, ?, ?, ?, ?, ?)
+            ''', (
+                json.dumps(profil_data.get('competences', [])),
+                profil_data.get('annees_exp', 0),
+                json.dumps(profil_data.get('postes', [])),
+                profil_data.get('niveau_etudes', ''),
+                profil_data.get('extrait_important', ''),
+                date_now
+            ))
+            await db.commit()
+
+async def recuperer_profil_matching_async():
+    """Récupère le profil pour matching."""
+    import json
+    async with get_async_conn() as db:
+        cursor = await db.execute('''
+            SELECT competences, annees_exp, postes, niveau_etudes, extrait_important, date_extraction
+            FROM profil_matching WHERE id = 1
+        ''')
+        async with cursor:
+            row = await cursor.fetchone()
+
+    if not row:
+        return None
+
+    return {
+        'competences': json.loads(row[0]) if row[0] else [],
+        'annees_exp': row[1] or 0,
+        'postes': json.loads(row[2]) if row[2] else [],
+        'niveau_etudes': row[3] or '',
+        'extrait_important': row[4] or '',
+        'date_extraction': row[5] or ''
     }
 
 async def offre_existe_async(url):
@@ -347,6 +403,8 @@ def sauvegarder_offre_permanente(d): return _run_async(sauvegarder_offre_permane
 def compter_offres(): return _run_async(compter_offres_async())
 def recuperer_cv(): return _run_async(recuperer_cv_async())
 def sauvegarder_cv(n, e, t, p, c): return _run_async(sauvegarder_cv_async(n, e, t, p, c))
+def sauvegarder_profil_matching(d): return _run_async(sauvegarder_profil_matching_async(d))
+def recuperer_profil_matching(): return _run_async(recuperer_profil_matching_async())
 def vider_cache():
     if os.path.exists(DB_FILE):
         os.remove(DB_FILE)

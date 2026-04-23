@@ -127,9 +127,6 @@ class PortalScraper(BaseScraper):
                         "date_decouverte": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     }
                     
-                    # Intelligence: Recherche réseaux sociaux
-                    offre_data = await enrichir_offre_intel(offre_data)
-                    
                     # Sauvegarde finale et envoi
                     await self.traiter_offre(offre_data) # Re-save with details and intel
                     if self.telegram_bot:
@@ -176,7 +173,7 @@ class PortalScraper(BaseScraper):
 
     async def _extraire_details(self, page, url):
         try:
-            await page.goto(url, wait_until="networkidle", timeout=30000)
+            await page.goto(url, wait_until="networkidle", timeout=60000)
             details = []
             
             # Récupérer tous les titres H2 de la page

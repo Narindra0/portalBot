@@ -19,8 +19,11 @@ TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 # === Hugging Face (Déprécié) ===
 HF_API_KEY = os.getenv('HF_API_KEY')
 
-# === Google Gemini (Recommandé) ===
+# === Google Gemini (Fallback) ===
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
+
+# === OpenRouter (Gratuit - Prioritaire) ===
+OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY')
 
 # === Mode d'exécution ===
 HEADLESS = os.getenv('HEADLESS', 'false').lower() == 'true'

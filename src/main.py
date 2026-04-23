@@ -8,6 +8,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from .scraper.portal import surveiller_portal
 from .scraper.asako import surveiller_asako
+from .scraper.mission_mada import surveiller_mission_mada
 from .telegram.callback_handler import setup_application
 from .storage.cache_db import init_db_async
 from .utils.logger import logger
@@ -15,10 +16,11 @@ from .utils.logger import logger
 async def run_scraper_task(bot):
     """Encapsulation de la tâche scraper pour le scheduler."""
     try:
-        # Lancement simultané des scrapers
+        # Lancement simultané des scrapers (PortalJob + Asako + Mission-Mada)
         await asyncio.gather(
             surveiller_portal(telegram_bot=bot),
-            surveiller_asako(telegram_bot=bot)
+            surveiller_asako(telegram_bot=bot),
+            surveiller_mission_mada(telegram_bot=bot)
         )
     except Exception as e:
         logger.error(f"Erreur durant la tâche planifiée : {e}")
@@ -46,16 +48,32 @@ async def main():
     
     # --- Mode SCRAPER (exécution unique) ---
     if mode == "scraper":
-        logger.info("🔍 Lancement du scan ponctuel (PortalJob + Asako)...")
+        logger.info("🔍 Lancement du scan ponctuel (PortalJob + Asako + Mission-Mada)...")
         try:
             await asyncio.gather(
                 surveiller_portal(telegram_bot=app.bot),
-                surveiller_asako(telegram_bot=app.bot)
+                surveiller_asako(telegram_bot=app.bot),
+                surveiller_mission_mada(telegram_bot=app.bot)
             )
             logger.info("✅ Scan terminé avec succès.")
         except Exception as e:
             logger.error(f"❌ Erreur durant le scan : {e}")
         finally:
+            await app.shutdown()
+        return
+
+    # --- Mode BOT-ONCE (pour GitHub Actions - une seule itération) ---
+    if mode == "bot-once":
+        logger.info("🤖 Mode bot-once: exécution unique pour GitHub Actions...")
+        try:
+            await app.start()
+            # Exécuter un scan unique
+            await run_scraper_task(app.bot)
+            logger.info("✅ Bot-once terminé avec succès.")
+        except Exception as e:
+            logger.error(f"❌ Erreur durant bot-once : {e}")
+        finally:
+            await app.stop()
             await app.shutdown()
         return
 
